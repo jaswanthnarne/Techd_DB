@@ -24,7 +24,7 @@ const allowedOrigins = [
   'https://ctftechd.vercel.app',
   'https://ctfchallange.vercel.app',
   'http://localhost:5173',
-  'http://localhost:3000',
+  'http://localhost:3000',s
 ];
 
 // Security Middleware
