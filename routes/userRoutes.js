@@ -17,7 +17,7 @@
 //   try {
 //     const user = await User.findById(req.user._id)
 //       .select('-password -passwordResetToken -passwordResetExpires -loginHistory');
-    
+
 //     res.json({
 //       message: 'Profile retrieved successfully',
 //       user
@@ -37,17 +37,17 @@
 //   try {
 //     const errors = validationResult(req);
 //     if (!errors.isEmpty()) {
-//       return res.status(400).json({ 
-//         error: 'Validation failed', 
-//         details: errors.array() 
+//       return res.status(400).json({
+//         error: 'Validation failed',
+//         details: errors.array()
 //       });
 //     }
 
 //     const allowedUpdates = [
-//       'fullName', 'contactNumber', 'specialization', 
+//       'fullName', 'contactNumber', 'specialization',
 //       'expertiseLevel'
 //     ];
-    
+
 //     const updates = {};
 //     allowedUpdates.forEach(field => {
 //       if (req.body[field] !== undefined) {
@@ -103,7 +103,7 @@
 //           solvedCTFs: {
 //             $sum: {
 //               $cond: [
-//                 { 
+//                 {
 //                   $gt: [
 //                     {
 //                       $size: {
@@ -163,7 +163,7 @@
 //       stats: {
 //         ctfs: ctfStats[0] || { totalJoined: 0, solvedCTFs: 0 },
 //         submissions: submissionStats[0] || { totalSubmissions: 0, correctSubmissions: 0, totalPoints: 0 },
-//         accuracy: submissionStats[0] ? 
+//         accuracy: submissionStats[0] ?
 //           Math.round((submissionStats[0].correctSubmissions / submissionStats[0].totalSubmissions) * 100) : 0
 //       },
 //       recentActivity: recentSubmissions,
@@ -205,16 +205,16 @@
 //     .sort({ submittedAt: -1 });
 
 //     if (!submission) {
-//       return res.status(404).json({ 
+//       return res.status(404).json({
 //         error: 'No submission found for this CTF',
-//         submission: null 
+//         submission: null
 //       });
 //     }
 
 //     console.log('✅ Submission found:', submission._id);
-//     res.json({ 
+//     res.json({
 //       message: 'Submission found',
-//       submission 
+//       submission
 //     });
 //   } catch (error) {
 //     console.error('❌ Get user submission error:', error);
@@ -317,7 +317,6 @@
 //   }
 // });
 
-
 // // ==========================
 // // USER STATISTICS ROUTES
 // // ==========================
@@ -334,7 +333,7 @@
 //         $group: {
 //           _id: null,
 //           totalSubmissions: { $sum: 1 },
-//           correctSubmissions: { 
+//           correctSubmissions: {
 //             $sum: { $cond: ['$isCorrect', 1, 0] }
 //           },
 //           totalPoints: { $sum: '$points' }
@@ -352,7 +351,7 @@
 //           solvedCTFs: {
 //             $sum: {
 //               $cond: [
-//                 { 
+//                 {
 //                   $gt: [
 //                     {
 //                       $size: {
@@ -380,11 +379,11 @@
 
 //     // Category-wise performance
 //     const categoryStats = await Submission.aggregate([
-//       { 
-//         $match: { 
+//       {
+//         $match: {
 //           user: userId,
-//           isCorrect: true 
-//         } 
+//           isCorrect: true
+//         }
 //       },
 //       {
 //         $lookup: {
@@ -413,15 +412,15 @@
 //       .select('isCorrect points submittedAt ctf');
 
 //     const stats = {
-//       submissions: submissionStats[0] || { 
-//         totalSubmissions: 0, 
-//         correctSubmissions: 0, 
-//         totalPoints: 0 
+//       submissions: submissionStats[0] || {
+//         totalSubmissions: 0,
+//         correctSubmissions: 0,
+//         totalPoints: 0
 //       },
 //       ctfs: ctfStats[0] || { totalCTFs: 0, solvedCTFs: 0 },
 //       categories: categoryStats,
 //       recentActivity,
-//       accuracy: submissionStats[0] ? 
+//       accuracy: submissionStats[0] ?
 //         Math.round((submissionStats[0].correctSubmissions / submissionStats[0].totalSubmissions) * 100) : 0
 //     };
 
@@ -478,7 +477,7 @@
 //     ]);
 
 //     // Find user's position
-//     const userRank = globalRanking.findIndex(rank => 
+//     const userRank = globalRanking.findIndex(rank =>
 //       rank._id.toString() === userId.toString()
 //     );
 
@@ -509,13 +508,13 @@
 
 // module.exports = router;
 
-const express = require('express');
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const CTF = require('../models/CTF');
-const Submission = require('../models/Submission');
-const { requireAuth } = require('./authRoutes');
-const { body, validationResult } = require('express-validator');
+const express = require("express");
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const CTF = require("../models/CTF");
+const Submission = require("../models/Submission");
+const { requireAuth } = require("./authRoutes");
+const { body, validationResult } = require("express-validator");
 
 const router = express.Router();
 
@@ -524,89 +523,111 @@ const router = express.Router();
 // ==========================
 
 // Get user profile
-router.get('/profile', requireAuth, async (req, res) => {
+router.get("/profile", requireAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id)
-      .select('-password -passwordResetToken -passwordResetExpires -loginHistory');
-    
+    const user = await User.findById(req.user._id).select(
+      "-password -passwordResetToken -passwordResetExpires -loginHistory"
+    );
+
     res.json({
-      message: 'Profile retrieved successfully',
-      user
+      message: "Profile retrieved successfully",
+      user,
     });
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get profile error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Update user profile
-router.patch('/profile', requireAuth, [
-  body('email').optional().isEmail().withMessage('Please provide a valid email'),
-  body('contactNumber').optional().isMobilePhone().withMessage('Please provide a valid phone number'),
-  body('expertiseLevel').optional().isIn(['Beginner', 'Junior', 'Intermediate', 'Senior', 'Expert']).withMessage('Invalid expertise level')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: errors.array() 
+router.patch(
+  "/profile",
+  requireAuth,
+  [
+    body("email")
+      .optional()
+      .isEmail()
+      .withMessage("Please provide a valid email"),
+    body("contactNumber")
+      .optional()
+      .isMobilePhone()
+      .withMessage("Please provide a valid phone number"),
+    body("expertiseLevel")
+      .optional()
+      .isIn(["Beginner", "Junior", "Intermediate", "Senior", "Expert"])
+      .withMessage("Invalid expertise level"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: errors.array(),
+        });
+      }
+
+      const allowedUpdates = [
+        "fullName",
+        "contactNumber",
+        "specialization",
+        "expertiseLevel",
+      ];
+
+      const updates = {};
+      allowedUpdates.forEach((field) => {
+        if (req.body[field] !== undefined) {
+          updates[field] = req.body[field];
+        }
       });
-    }
 
-    const allowedUpdates = [
-      'fullName', 'contactNumber', 'specialization', 
-      'expertiseLevel'
-    ];
-    
-    const updates = {};
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+      // Handle email separately (needs uniqueness check)
+      if (req.body.email && req.body.email !== req.user.email) {
+        const existingUser = await User.findOne({ email: req.body.email });
+        if (existingUser) {
+          return res.status(400).json({ error: "Email already taken" });
+        }
+        updates.email = req.body.email;
       }
-    });
 
-    // Handle email separately (needs uniqueness check)
-    if (req.body.email && req.body.email !== req.user.email) {
-      const existingUser = await User.findOne({ email: req.body.email });
-      if (existingUser) {
-        return res.status(400).json({ error: 'Email already taken' });
+      const user = await User.findByIdAndUpdate(
+        req.user._id,
+        { $set: updates },
+        { new: true, runValidators: true }
+      ).select(
+        "-password -passwordResetToken -passwordResetExpires -loginHistory"
+      );
+
+      res.json({
+        message: "Profile updated successfully",
+        user,
+      });
+    } catch (error) {
+      console.error("Update profile error:", error);
+      if (error.name === "ValidationError") {
+        const errors = Object.values(error.errors).map((err) => err.message);
+        return res
+          .status(400)
+          .json({ error: "Validation failed", details: errors });
       }
-      updates.email = req.body.email;
+      res.status(500).json({ error: "Server error" });
     }
-
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { $set: updates },
-      { new: true, runValidators: true }
-    ).select('-password -passwordResetToken -passwordResetExpires -loginHistory');
-
-    res.json({
-      message: 'Profile updated successfully',
-      user
-    });
-  } catch (error) {
-    console.error('Update profile error:', error);
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({ error: 'Validation failed', details: errors });
-    }
-    res.status(500).json({ error: 'Server error' });
   }
-});
+);
 
 // Get user dashboard data
-router.get('/dashboard', requireAuth, async (req, res) => {
+router.get("/dashboard", requireAuth, async (req, res) => {
   try {
     const userId = req.user._id;
 
     // Get basic user info
-    const user = await User.findById(userId)
-      .select('fullName email role specialization expertiseLevel lastLogin');
+    const user = await User.findById(userId).select(
+      "fullName email role specialization expertiseLevel lastLogin"
+    );
 
     // Get CTF participation stats
     const ctfStats = await CTF.aggregate([
-      { $match: { 'participants.user': userId } },
+      { $match: { "participants.user": userId } },
       {
         $group: {
           _id: null,
@@ -614,30 +635,32 @@ router.get('/dashboard', requireAuth, async (req, res) => {
           solvedCTFs: {
             $sum: {
               $cond: [
-                { 
+                {
                   $gt: [
                     {
                       $size: {
                         $filter: {
-                          input: '$participants',
-                          as: 'p',
+                          input: "$participants",
+                          as: "p",
                           cond: {
                             $and: [
-                              { $eq: ['$$p.user', userId] },
-                              { $eq: ['$$p.isCorrect', true] }
-                            ]
-                          }
-                        }
-                      }
+                              { $eq: ["$$p.user", userId] },
+                              { $eq: ["$$p.isCorrect", true] },
+                            ],
+                          },
+                        },
+                      },
                     },
-                    0
-                  ]
-                }, 1, 0
-              ]
-            }
-          }
-        }
-      }
+                    0,
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
     ]);
 
     // Get submission stats
@@ -647,47 +670,56 @@ router.get('/dashboard', requireAuth, async (req, res) => {
         $group: {
           _id: null,
           totalSubmissions: { $sum: 1 },
-          correctSubmissions: { $sum: { $cond: ['$isCorrect', 1, 0] } },
-          totalPoints: { $sum: '$points' }
-        }
-      }
+          correctSubmissions: { $sum: { $cond: ["$isCorrect", 1, 0] } },
+          totalPoints: { $sum: "$points" },
+        },
+      },
     ]);
 
     // Get recent submissions
     const recentSubmissions = await Submission.find({ user: userId })
-      .populate('ctf', 'title category points')
+      .populate("ctf", "title category points")
       .sort({ submittedAt: -1 })
       .limit(5)
-      .select('isCorrect points submittedAt ctf');
+      .select("isCorrect points submittedAt ctf");
 
     // Get active CTFs
     const activeCTFs = await CTF.find({
-      'participants.user': userId,
-      status: 'active',
-      isVisible: true
+      "participants.user": userId,
+      status: "active",
+      isVisible: true,
     })
-    .select('title description category points difficulty activeHours')
-    .limit(3);
+      .select("title description category points difficulty activeHours")
+      .limit(3);
 
     const dashboardData = {
       user,
       stats: {
         ctfs: ctfStats[0] || { totalJoined: 0, solvedCTFs: 0 },
-        submissions: submissionStats[0] || { totalSubmissions: 0, correctSubmissions: 0, totalPoints: 0 },
-        accuracy: submissionStats[0] ? 
-          Math.round((submissionStats[0].correctSubmissions / submissionStats[0].totalSubmissions) * 100) : 0
+        submissions: submissionStats[0] || {
+          totalSubmissions: 0,
+          correctSubmissions: 0,
+          totalPoints: 0,
+        },
+        accuracy: submissionStats[0]
+          ? Math.round(
+              (submissionStats[0].correctSubmissions /
+                submissionStats[0].totalSubmissions) *
+                100
+            )
+          : 0,
       },
       recentActivity: recentSubmissions,
-      activeCTFs
+      activeCTFs,
     };
 
     res.json({
-      message: 'Dashboard data retrieved successfully',
-      ...dashboardData
+      message: "Dashboard data retrieved successfully",
+      ...dashboardData,
     });
   } catch (error) {
-    console.error('Get dashboard error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get dashboard error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -696,39 +728,39 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 // ==========================
 
 // Get user's joined CTFs
-router.get('/ctfs/joined', requireAuth, async (req, res) => {
+router.get("/ctfs/joined", requireAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status = 'all' } = req.query;
-    
+    const { page = 1, limit = 10, status = "all" } = req.query;
+
     let timeFilter = {};
     const now = new Date();
-    
-    if (status === 'active') {
-      timeFilter = { 
-        'schedule.startDate': { $lte: now },
-        'schedule.endDate': { $gte: now }
+
+    if (status === "active") {
+      timeFilter = {
+        "schedule.startDate": { $lte: now },
+        "schedule.endDate": { $gte: now },
       };
-    } else if (status === 'upcoming') {
-      timeFilter = { 'schedule.startDate': { $gt: now } };
-    } else if (status === 'past') {
-      timeFilter = { 'schedule.endDate': { $lt: now } };
+    } else if (status === "upcoming") {
+      timeFilter = { "schedule.startDate": { $gt: now } };
+    } else if (status === "past") {
+      timeFilter = { "schedule.endDate": { $lt: now } };
     }
 
     const ctfs = await CTF.find({
-      'participants.user': req.user._id,
+      "participants.user": req.user._id,
       isVisible: true,
-      ...timeFilter
+      ...timeFilter,
     })
-    .populate('createdBy', 'fullName email')
-    .select('-flag')
-    .sort({ 'schedule.startDate': 1 })
-    .limit(limit * 1)
-    .skip((page - 1) * limit);
+      .populate("createdBy", "fullName email")
+      .select("-flag")
+      .sort({ "schedule.startDate": 1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
     const total = await CTF.countDocuments({
-      'participants.user': req.user._id,
+      "participants.user": req.user._id,
       isVisible: true,
-      ...timeFilter
+      ...timeFilter,
     });
 
     res.json({
@@ -737,79 +769,80 @@ router.get('/ctfs/joined', requireAuth, async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total,
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
-    console.error('Get joined CTFs error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get joined CTFs error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Get user's submission for a specific CTF
-router.get('/ctfs/:id/my-submission', requireAuth, async (req, res) => {
+router.get("/ctfs/:id/my-submission", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
 
-    console.log('🔍 Fetching submission for CTF:', id, 'User:', userId);
+    console.log("🔍 Fetching submission for CTF:", id, "User:", userId);
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid CTF ID format' });
+      return res.status(400).json({ error: "Invalid CTF ID format" });
     }
 
     const submission = await Submission.findOne({
       user: userId,
-      ctf: id
+      ctf: id,
     })
-    .populate('ctf', 'title category points activeHours schedule')
-    .populate('reviewedBy', 'fullName email')
-    .sort({ submittedAt: -1 });
+      .populate("ctf", "title category points activeHours schedule")
+      .populate("reviewedBy", "fullName email")
+      .sort({ submittedAt: -1 });
 
     if (!submission) {
-      return res.status(404).json({ 
-        error: 'No submission found for this CTF',
-        submission: null 
+      return res.status(404).json({
+        error: "No submission found for this CTF",
+        submission: null,
       });
     }
 
-    console.log('✅ Submission found:', submission._id);
-    res.json({ 
-      message: 'Submission found',
-      submission 
+    console.log("✅ Submission found:", submission._id);
+    res.json({
+      message: "Submission found",
+      submission,
     });
   } catch (error) {
-    console.error('❌ Get user submission error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("❌ Get user submission error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Get user's CTF progress
-router.get('/ctfs/:id/progress', requireAuth, async (req, res) => {
+router.get("/ctfs/:id/progress", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid CTF ID format' });
+      return res.status(400).json({ error: "Invalid CTF ID format" });
     }
 
-    const ctf = await CTF.findById(id)
-      .select('title description category points difficulty status activeHours schedule participants rules');
+    const ctf = await CTF.findById(id).select(
+      "title description category points difficulty status activeHours schedule participants rules"
+    );
 
     if (!ctf) {
-      return res.status(404).json({ error: 'CTF not found' });
+      return res.status(404).json({ error: "CTF not found" });
     }
 
     // Find user's participation
     const participation = ctf.participants.find(
-      p => p.user.toString() === userId.toString()
+      (p) => p.user.toString() === userId.toString()
     );
 
     // Get user's submissions for this CTF
     const submissions = await Submission.find({
       user: userId,
-      ctf: id
+      ctf: id,
     }).sort({ submittedAt: -1 });
 
     const progress = {
@@ -820,7 +853,9 @@ router.get('/ctfs/:id/progress', requireAuth, async (req, res) => {
       maxAttempts: ctf.maxAttempts,
       submittedAt: participation ? participation.submittedAt : null,
       submissions: submissions,
-      canSubmit: ctf.canSubmit() && (!participation?.isCorrect || ctf.rules.allowMultipleSubmissions)
+      canSubmit:
+        ctf.canSubmit() &&
+        (!participation?.isCorrect || ctf.rules.allowMultipleSubmissions),
     };
 
     res.json({
@@ -835,18 +870,18 @@ router.get('/ctfs/:id/progress', requireAuth, async (req, res) => {
         activeHours: ctf.activeHours,
         schedule: ctf.schedule,
         isCurrentlyActive: ctf.isCurrentlyActive(),
-        rules: ctf.rules
+        rules: ctf.rules,
       },
-      progress
+      progress,
     });
   } catch (error) {
-    console.error('Get CTF progress error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get CTF progress error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Get user's submission history
-router.get('/my-submissions', requireAuth, async (req, res) => {
+router.get("/my-submissions", requireAuth, async (req, res) => {
   try {
     const { page = 1, limit = 20, ctfId } = req.query;
 
@@ -856,11 +891,11 @@ router.get('/my-submissions', requireAuth, async (req, res) => {
     }
 
     const submissions = await Submission.find(filter)
-      .populate('ctf', 'title category points')
+      .populate("ctf", "title category points")
       .sort({ submittedAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .select('-ipAddress -userAgent');
+      .select("-ipAddress -userAgent");
 
     const total = await Submission.countDocuments(filter);
 
@@ -870,12 +905,12 @@ router.get('/my-submissions', requireAuth, async (req, res) => {
         page: parseInt(page),
         limit: parseInt(limit),
         total,
-        pages: Math.ceil(total / limit)
-      }
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
-    console.error('Get submissions error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get submissions error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
@@ -884,7 +919,7 @@ router.get('/my-submissions', requireAuth, async (req, res) => {
 // ==========================
 
 // Get user's statistics
-router.get('/stats', requireAuth, async (req, res) => {
+router.get("/stats", requireAuth, async (req, res) => {
   try {
     const userId = req.user._id;
 
@@ -895,17 +930,17 @@ router.get('/stats', requireAuth, async (req, res) => {
         $group: {
           _id: null,
           totalSubmissions: { $sum: 1 },
-          correctSubmissions: { 
-            $sum: { $cond: ['$isCorrect', 1, 0] }
+          correctSubmissions: {
+            $sum: { $cond: ["$isCorrect", 1, 0] },
           },
-          totalPoints: { $sum: '$points' }
-        }
-      }
+          totalPoints: { $sum: "$points" },
+        },
+      },
     ]);
 
     // CTFs participated in
     const ctfStats = await CTF.aggregate([
-      { $match: { 'participants.user': userId } },
+      { $match: { "participants.user": userId } },
       {
         $group: {
           _id: null,
@@ -913,158 +948,168 @@ router.get('/stats', requireAuth, async (req, res) => {
           solvedCTFs: {
             $sum: {
               $cond: [
-                { 
+                {
                   $gt: [
                     {
                       $size: {
                         $filter: {
-                          input: '$participants',
-                          as: 'p',
+                          input: "$participants",
+                          as: "p",
                           cond: {
                             $and: [
-                              { $eq: ['$$p.user', userId] },
-                              { $eq: ['$$p.isCorrect', true] }
-                            ]
-                          }
-                        }
-                      }
+                              { $eq: ["$$p.user", userId] },
+                              { $eq: ["$$p.isCorrect", true] },
+                            ],
+                          },
+                        },
+                      },
                     },
-                    0
-                  ]
-                }, 1, 0
-              ]
-            }
-          }
-        }
-      }
+                    0,
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
     ]);
 
     // Category-wise performance
     const categoryStats = await Submission.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           user: userId,
-          isCorrect: true 
-        } 
+          isCorrect: true,
+        },
       },
       {
         $lookup: {
-          from: 'ctfs',
-          localField: 'ctf',
-          foreignField: '_id',
-          as: 'ctfInfo'
-        }
+          from: "ctfs",
+          localField: "ctf",
+          foreignField: "_id",
+          as: "ctfInfo",
+        },
       },
-      { $unwind: '$ctfInfo' },
+      { $unwind: "$ctfInfo" },
       {
         $group: {
-          _id: '$ctfInfo.category',
+          _id: "$ctfInfo.category",
           totalSolved: { $sum: 1 },
-          totalPoints: { $sum: '$points' }
-        }
+          totalPoints: { $sum: "$points" },
+        },
       },
-      { $sort: { totalPoints: -1 } }
+      { $sort: { totalPoints: -1 } },
     ]);
 
     // Recent activity
     const recentActivity = await Submission.find({ user: userId })
-      .populate('ctf', 'title category')
+      .populate("ctf", "title category")
       .sort({ submittedAt: -1 })
       .limit(10)
-      .select('isCorrect points submittedAt ctf');
+      .select("isCorrect points submittedAt ctf");
 
     const stats = {
-      submissions: submissionStats[0] || { 
-        totalSubmissions: 0, 
-        correctSubmissions: 0, 
-        totalPoints: 0 
+      submissions: submissionStats[0] || {
+        totalSubmissions: 0,
+        correctSubmissions: 0,
+        totalPoints: 0,
       },
       ctfs: ctfStats[0] || { totalCTFs: 0, solvedCTFs: 0 },
       categories: categoryStats,
       recentActivity,
-      accuracy: submissionStats[0] ? 
-        Math.round((submissionStats[0].correctSubmissions / submissionStats[0].totalSubmissions) * 100) : 0
+      accuracy: submissionStats[0]
+        ? Math.round(
+            (submissionStats[0].correctSubmissions /
+              submissionStats[0].totalSubmissions) *
+              100
+          )
+        : 0,
     };
 
     res.json({ stats });
   } catch (error) {
-    console.error('Get user stats error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get user stats error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // Get user ranking
-router.get('/ranking', requireAuth, async (req, res) => {
+router.get("/ranking", requireAuth, async (req, res) => {
   try {
     const userId = req.user._id;
 
     // Get global ranking
     const globalRanking = await Submission.aggregate([
       {
-        $match: { isCorrect: true }
+        $match: { isCorrect: true },
       },
       {
         $group: {
-          _id: '$user',
-          totalPoints: { $sum: '$points' },
+          _id: "$user",
+          totalPoints: { $sum: "$points" },
           solveCount: { $sum: 1 },
-          lastSolve: { $max: '$submittedAt' }
-        }
+          lastSolve: { $max: "$submittedAt" },
+        },
       },
       {
         $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'user'
-        }
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "user",
+        },
       },
       {
-        $unwind: '$user'
+        $unwind: "$user",
       },
       {
         $project: {
-          'user.password': 0,
-          'user.loginHistory': 0,
-          'user.passwordResetToken': 0,
-          'user.passwordResetExpires': 0
-        }
+          "user.password": 0,
+          "user.loginHistory": 0,
+          "user.passwordResetToken": 0,
+          "user.passwordResetExpires": 0,
+        },
       },
       {
         $sort: {
           totalPoints: -1,
-          lastSolve: 1
-        }
-      }
+          lastSolve: 1,
+        },
+      },
     ]);
 
     // Find user's position
-    const userRank = globalRanking.findIndex(rank => 
-      rank._id.toString() === userId.toString()
+    const userRank = globalRanking.findIndex(
+      (rank) => rank._id.toString() === userId.toString()
     );
 
-    const userRanking = userRank !== -1 ? {
-      position: userRank + 1,
-      totalPoints: globalRanking[userRank].totalPoints,
-      solveCount: globalRanking[userRank].solveCount,
-      totalParticipants: globalRanking.length
-    } : {
-      position: globalRanking.length + 1,
-      totalPoints: 0,
-      solveCount: 0,
-      totalParticipants: globalRanking.length
-    };
+    const userRanking =
+      userRank !== -1
+        ? {
+            position: userRank + 1,
+            totalPoints: globalRanking[userRank].totalPoints,
+            solveCount: globalRanking[userRank].solveCount,
+            totalParticipants: globalRanking.length,
+          }
+        : {
+            position: globalRanking.length + 1,
+            totalPoints: 0,
+            solveCount: 0,
+            totalParticipants: globalRanking.length,
+          };
 
     // Get top 10 users
     const topUsers = globalRanking.slice(0, 10);
 
     res.json({
       userRanking,
-      topUsers
+      topUsers,
     });
   } catch (error) {
-    console.error('Get user ranking error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error("Get user ranking error:", error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
