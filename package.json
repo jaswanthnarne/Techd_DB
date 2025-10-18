@@ -9,9 +9,6 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "vercel-build": "echo 'No build step required for Node.js'"
   },
-  "engines": {
-    "node": ">=18.x"
-  },
   "dependencies": {
     "@json2csv/plainjs": "^6.1.2",
     "bcrypt": "^5.1.0",
