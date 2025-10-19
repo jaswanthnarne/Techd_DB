@@ -16,8 +16,14 @@ const userRoutes = require('./routes/userRoutes');
 
 const app = express();
 
-// Connect to Database
+
+// ✅ FIX: Trust proxy ONLY for Vercel production
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+  console.log('🔧 Trust proxy enabled for Vercel');
+}
 connectDB();
+
 
 // CORS configuration for Vercel
 const allowedOrigins = [
