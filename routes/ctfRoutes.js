@@ -193,64 +193,6 @@ router.get("/leaderboard/global", async (req, res) => {
 // PROTECTED ROUTES (Require Auth)
 // ==========================
 
-// Join CTF - Add proper status validation
-// router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const userId = req.user._id;
-
-//     if (!mongoose.Types.ObjectId.isValid(id)) {
-//       return res.status(400).json({ error: "Invalid CTF ID format" });
-//     }
-
-//     const ctf = await CTF.findById(id);
-//     if (!ctf) {
-//       return res.status(404).json({ error: "CTF not found" });
-//     }
-
-//     // Enhanced validation for joining
-//     if (!ctf.isVisible || !ctf.isPublished) {
-//       return res
-//         .status(403)
-//         .json({ error: "CTF is not available for joining" });
-//     }
-
-//     // Check if CTF is currently active
-//     const isActive = ctf.isCurrentlyActive();
-//     if (!isActive && ctf.status !== "active") {
-//       return res.status(403).json({
-//         error: "CTF is not currently active. Please check the active hours.",
-//       });
-//     }
-
-//     // Check if already joined
-//     const alreadyJoined = ctf.participants.some(
-//       (participant) => participant.user.toString() === userId.toString()
-//     );
-
-//     if (alreadyJoined) {
-//       return res.status(400).json({ error: "Already joined this CTF" });
-//     }
-
-//     // Add participant
-//     ctf.addParticipant(userId);
-//     await ctf.save();
-
-//     res.json({
-//       message: "Successfully joined CTF",
-//       ctf: {
-//         _id: ctf._id,
-//         title: ctf.title,
-//         status: ctf.status,
-//         isCurrentlyActive: isActive,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Join CTF error:", error);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
-
 // After Changes Deploying 
 // Join CTF - Add proper status validation
 router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
@@ -953,4 +895,297 @@ router.put(
     }
   }
 );
+
+
+
+// Get all CTFs with user's submissions and screenshots
+router.get("/my-ctfs-with-submissions", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20)); // Add upper limit
+
+    // Get all CTFs the user has participated in
+    const ctfs = await CTF.find({
+      "participants.user": userId,
+      isVisible: true,
+    })
+      .populate("createdBy", "fullName email")
+      .select("-flag")
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip((page - 1) * limit)
+      .lean(); // Use lean() for better performance
+
+    // Get CTF IDs for submissions query
+    const ctfIds = ctfs.map((ctf) => ctf._id);
+    
+    // Only query submissions if we have CTFs
+    let submissions = [];
+    if (ctfIds.length > 0) {
+      submissions = await Submission.find({
+        user: userId,
+        ctf: { $in: ctfIds },
+      })
+        .populate("ctf", "title category points")
+        .sort({ submittedAt: -1 })
+        .lean();
+    }
+
+    // Group submissions by CTF
+    const submissionsByCTF = {};
+    submissions.forEach((submission) => {
+      const ctfId = submission.ctf._id.toString();
+      if (!submissionsByCTF[ctfId]) {
+        submissionsByCTF[ctfId] = [];
+      }
+      submissionsByCTF[ctfId].push(submission);
+    });
+
+    // Enhance CTFs with submission data
+    const ctfsWithSubmissions = ctfs.map((ctf) => {
+      const ctfId = ctf._id.toString();
+      const ctfSubmissions = submissionsByCTF[ctfId] || [];
+      
+      return {
+        ...ctf,
+        submissions: ctfSubmissions,
+        hasScreenshots: ctfSubmissions.some((sub) => sub.screenshot && sub.screenshot !== ''),
+        latestSubmission: ctfSubmissions[0] || null,
+      };
+    });
+
+    const total = await CTF.countDocuments({
+      "participants.user": userId,
+      isVisible: true,
+    });
+
+    res.json({
+      ctfs: ctfsWithSubmissions,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get CTFs with submissions error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get all submissions with screenshots for a user
+router.get("/my-screenshots", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const { ctfId } = req.query;
+
+    let filter = {
+      user: userId,
+      screenshot: { $exists: true, $ne: null, $ne: '' }, // Check for non-empty strings
+    };
+
+    if (ctfId && mongoose.Types.ObjectId.isValid(ctfId)) {
+      filter.ctf = ctfId;
+    }
+
+    const submissions = await Submission.find(filter)
+      .populate("ctf", "title category points")
+      .populate("reviewedBy", "fullName email")
+      .sort({ submittedAt: -1 })
+      .limit(limit)
+      .skip((page - 1) * limit)
+      .select("-ipAddress -userAgent")
+      .lean();
+
+    const total = await Submission.countDocuments(filter);
+
+    res.json({
+      submissions,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get screenshots error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Get submission screenshot details
+router.get(
+  "/submissions/:submissionId/screenshot",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const userId = req.user._id;
+
+      if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+        return res.status(400).json({ error: "Invalid submission ID format" });
+      }
+
+      const submission = await Submission.findOne({
+        _id: submissionId,
+        user: userId,
+      })
+        .populate("ctf", "title category points")
+        .select("ctf screenshot submissionStatus submittedAt reviewedAt adminFeedback points isCorrect");
+
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (!submission.screenshot || submission.screenshot === '') {
+        return res
+          .status(404)
+          .json({ error: "No screenshot found for this submission" });
+      }
+
+      res.json({
+        submission: {
+          _id: submission._id,
+          ctf: submission.ctf,
+          screenshot: submission.screenshot,
+          submissionStatus: submission.submissionStatus,
+          submittedAt: submission.submittedAt,
+          reviewedAt: submission.reviewedAt,
+          adminFeedback: submission.adminFeedback,
+          points: submission.points,
+          isCorrect: submission.isCorrect,
+        },
+      });
+    } catch (error) {
+      console.error("Get submission screenshot error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+// Get all CTFs with user's progress and submission status
+router.get("/my-progress", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { status = "all" } = req.query;
+
+    let timeFilter = {};
+    const now = new Date();
+
+    if (status === "active") {
+      timeFilter = {
+        "schedule.startDate": { $lte: now },
+        "schedule.endDate": { $gte: now },
+      };
+    } else if (status === "upcoming") {
+      timeFilter = { "schedule.startDate": { $gt: now } };
+    } else if (status === "past") {
+      timeFilter = { "schedule.endDate": { $lt: now } };
+    }
+
+    const ctfs = await CTF.find({
+      "participants.user": userId,
+      isVisible: true,
+      ...timeFilter,
+    })
+      .populate("createdBy", "fullName email")
+      .select("-flag")
+      .sort({ "schedule.startDate": 1 })
+      .lean();
+
+    // Get CTF IDs for submissions query
+    const ctfIds = ctfs.map((ctf) => ctf._id);
+    
+    // Only query submissions if we have CTFs
+    let submissions = [];
+    if (ctfIds.length > 0) {
+      submissions = await Submission.find({
+        user: userId,
+        ctf: { $in: ctfIds },
+      })
+        .populate("ctf", "title category points")
+        .sort({ submittedAt: -1 })
+        .lean();
+    }
+
+    // Group submissions by CTF
+    const submissionsByCTF = {};
+    submissions.forEach((submission) => {
+      const ctfId = submission.ctf._id.toString();
+      if (!submissionsByCTF[ctfId]) {
+        submissionsByCTF[ctfId] = [];
+      }
+      submissionsByCTF[ctfId].push(submission);
+    });
+
+    // Calculate progress for each CTF
+    const progressData = ctfs.map((ctf) => {
+      const ctfId = ctf._id.toString();
+      const ctfSubmissions = submissionsByCTF[ctfId] || [];
+      const latestSubmission = ctfSubmissions[0] || null;
+      const hasApproved = ctfSubmissions.some(
+        (sub) => sub.submissionStatus === "approved"
+      );
+      const hasPending = ctfSubmissions.some(
+        (sub) => sub.submissionStatus === "pending"
+      );
+      const hasScreenshots = ctfSubmissions.some((sub) => sub.screenshot && sub.screenshot !== '');
+
+      // Find approved submission for points
+      const approvedSubmission = ctfSubmissions.find(
+        (sub) => sub.submissionStatus === "approved"
+      );
+
+      return {
+        ctf: {
+          _id: ctf._id,
+          title: ctf.title,
+          description: ctf.description,
+          category: ctf.category,
+          points: ctf.points,
+          difficulty: ctf.difficulty,
+          status: ctf.status,
+          activeHours: ctf.activeHours,
+          schedule: ctf.schedule,
+          ctfLink: ctf.ctfLink,
+          isCurrentlyActive: ctf.isCurrentlyActive ? ctf.isCurrentlyActive() : false,
+          createdBy: ctf.createdBy,
+        },
+        progress: {
+          totalSubmissions: ctfSubmissions.length,
+          hasApproved,
+          hasPending,
+          hasScreenshots,
+          latestSubmission,
+          allSubmissions: ctfSubmissions,
+          pointsEarned: approvedSubmission?.points || 0,
+          isSolved: hasApproved,
+        },
+      };
+    });
+
+    res.json({
+      progress: progressData,
+      stats: {
+        totalCTFs: progressData.length,
+        solvedCTFs: progressData.filter((p) => p.progress.hasApproved).length,
+        pendingCTFs: progressData.filter(
+          (p) => p.progress.hasPending && !p.progress.hasApproved
+        ).length,
+        totalSubmissions: submissions.length,
+        ctfsWithScreenshots: progressData.filter(
+          (p) => p.progress.hasScreenshots
+        ).length,
+      },
+    });
+  } catch (error) {
+    console.error("Get progress error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 module.exports = router;
