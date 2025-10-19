@@ -834,6 +834,9 @@ router.get("/ctfs/:id/progress", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "CTF not found" });
     }
 
+    // ✅ Calculate current status
+    const currentStatus = ctf.calculateStatus();
+
     // Find user's participation
     const participation = ctf.participants.find(
       (p) => p.user.toString() === userId.toString()
@@ -853,8 +856,7 @@ router.get("/ctfs/:id/progress", requireAuth, async (req, res) => {
       maxAttempts: ctf.maxAttempts,
       submittedAt: participation ? participation.submittedAt : null,
       submissions: submissions,
-      canSubmit:
-        ctf.canSubmit() &&
+      canSubmit: ctf.canSubmit() &&
         (!participation?.isCorrect || ctf.rules.allowMultipleSubmissions),
     };
 
@@ -866,7 +868,7 @@ router.get("/ctfs/:id/progress", requireAuth, async (req, res) => {
         category: ctf.category,
         points: ctf.points,
         difficulty: ctf.difficulty,
-        status: ctf.status,
+        status: currentStatus, // ✅ Use calculated status
         activeHours: ctf.activeHours,
         schedule: ctf.schedule,
         isCurrentlyActive: ctf.isCurrentlyActive(),
