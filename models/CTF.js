@@ -35,10 +35,10 @@ const ctfSchema = new mongoose.Schema({
       type: String, // Format: "HH:MM" 24-hour format
       required: true
     },
-    timezone: {
-      type: String,
-      default: 'UTC'
-    }
+  timezone: {
+    type: String,
+    default: 'Asia/Kolkata' // Your timezone
+  }
   },
   // Schedule configuration
   schedule: {
@@ -197,16 +197,72 @@ ctfSchema.methods.calculateStatus = function() {
 };
 
 // Active hours check only
+// ctfSchema.methods.isCurrentlyActive = function() {
+//   const status = this.calculateStatus();
+//   const isActive = status === 'active';
+//   console.log('🔍 isCurrentlyActive check:', {
+//     title: this.title,
+//     status: status,
+//     result: isActive
+//   });
+//   return isActive;
+// };
+
+//Change currently time-zone after deployment
+
+// In CTF.js - Replace the isCurrentlyActive method with this:
 ctfSchema.methods.isCurrentlyActive = function() {
-  const status = this.calculateStatus();
-  const isActive = status === 'active';
-  console.log('🔍 isCurrentlyActive check:', {
-    title: this.title,
-    status: status,
-    result: isActive
+  const now = new Date();
+  
+  // Convert to IST (Asia/Kolkata) timezone
+  const istTimeString = now.toLocaleTimeString('en-US', { 
+    timeZone: 'Asia/Kolkata',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   });
+  
+  console.log('🌍 Timezone Check:', {
+    serverUTC: now.toISOString(),
+    istTime: istTimeString,
+    startTime: this.activeHours.startTime,
+    endTime: this.activeHours.endTime,
+    timezone: 'Asia/Kolkata' // Your timezone
+  });
+
+  const [startHours, startMinutes] = this.activeHours.startTime.split(':').map(Number);
+  const [endHours, endMinutes] = this.activeHours.endTime.split(':').map(Number);
+
+  // Use IST time for comparison
+  const [currentHours, currentMinutes] = istTimeString.split(':').map(Number);
+  
+  const currentMinutesTotal = currentHours * 60 + currentMinutes;
+  const startMinutesTotal = startHours * 60 + startMinutes;
+  const endMinutesTotal = endHours * 60 + endMinutes;
+
+  console.log('📊 Time Comparison (IST):', {
+    currentTime: `${currentHours}:${currentMinutes.toString().padStart(2, '0')}`,
+    currentMinutes: currentMinutesTotal,
+    startMinutes: startMinutesTotal,
+    endMinutes: endMinutesTotal,
+    withinHours: currentMinutesTotal >= startMinutesTotal && currentMinutesTotal <= endMinutesTotal
+  });
+
+  // Handle case where active hours cross midnight
+  let isActive;
+  if (endMinutesTotal < startMinutesTotal) {
+    // Active hours cross midnight (e.g., 22:00 - 06:00)
+    isActive = currentMinutesTotal >= startMinutesTotal || currentMinutesTotal <= endMinutesTotal;
+  } else {
+    // Normal case (e.g., 02:00 - 18:00)
+    isActive = currentMinutesTotal >= startMinutesTotal && currentMinutesTotal <= endMinutesTotal;
+  }
+
+  console.log('✅ Final Active Status:', isActive);
   return isActive;
 };
+
 
 // In CTF.js - Fix the canSubmit method
 ctfSchema.methods.canSubmit = function() {

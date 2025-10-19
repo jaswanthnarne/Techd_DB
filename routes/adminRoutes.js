@@ -410,7 +410,11 @@ router.post(
         points,
         flag: flag || `CTF{${crypto.randomBytes(8).toString("hex")}}`,
         difficulty: difficulty || "Easy",
-        activeHours,
+        activeHours: {
+    startTime: activeHours.startTime,
+    endTime: activeHours.endTime,
+    timezone: activeHours.timezone || "Asia/Kolkata", // ✅ Set default timezone
+  },
         schedule: {
           startDate: new Date(schedule.startDate),
           endDate: new Date(schedule.endDate),
@@ -687,7 +691,7 @@ router.put(
             req.body.activeHours.startTime || ctf.activeHours.startTime,
           endTime: req.body.activeHours.endTime || ctf.activeHours.endTime,
           timezone:
-            req.body.activeHours.timezone || ctf.activeHours.timezone || "UTC",
+            req.body.activeHours.timezone || ctf.activeHours.timezone || "Asia/Kolkata",
         };
 
         // ✅ Require different times
