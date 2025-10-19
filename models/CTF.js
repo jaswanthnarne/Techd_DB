@@ -139,7 +139,6 @@ const ctfSchema = new mongoose.Schema({
   timestamps: true 
 });
 
-// Enhanced status calculation based on timing
 ctfSchema.methods.calculateStatus = function() {
   const now = new Date();
   
@@ -175,32 +174,39 @@ ctfSchema.methods.calculateStatus = function() {
     return 'inactive';
   }
   
-  // Convert schedule dates to IST for proper comparison
+  // ✅ FIXED: Proper IST date comparison
   const scheduleStart = new Date(this.schedule.startDate);
   const scheduleEnd = new Date(this.schedule.endDate);
   
-  // Adjust dates to IST timezone for comparison
+  // Get current date in IST (start of day)
   const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const istScheduleStart = new Date(scheduleStart.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const istScheduleEnd = new Date(scheduleEnd.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const istToday = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
   
-  console.log('📅 Schedule Comparison (IST):', {
+  // Convert schedule dates to IST (start of day)
+  const istScheduleStart = new Date(scheduleStart.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const istScheduleStartDate = new Date(istScheduleStart.getFullYear(), istScheduleStart.getMonth(), istScheduleStart.getDate());
+  
+  const istScheduleEnd = new Date(scheduleEnd.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const istScheduleEndDate = new Date(istScheduleEnd.getFullYear(), istScheduleEnd.getMonth(), istScheduleEnd.getDate());
+  
+  console.log('📅 FIXED Schedule Comparison (IST):', {
     currentIST: istNow,
-    scheduleStartIST: istScheduleStart,
-    scheduleEndIST: istScheduleEnd,
-    isBeforeStart: istNow < istScheduleStart,
-    isAfterEnd: istNow > istScheduleEnd,
-    isWithinSchedule: istNow >= istScheduleStart && istNow <= istScheduleEnd
+    currentISTDate: istToday,
+    scheduleStartIST: istScheduleStartDate,
+    scheduleEndIST: istScheduleEndDate,
+    isBeforeStart: istToday < istScheduleStartDate,
+    isAfterEnd: istToday > istScheduleEndDate,
+    isWithinSchedule: istToday >= istScheduleStartDate && istToday <= istScheduleEndDate
   });
   
   // 1. Check if CTF hasn't started yet (future)
-  if (istNow < istScheduleStart) {
+  if (istToday < istScheduleStartDate) {
     console.log('⏳ CTF is upcoming (starts in future)');
     return 'upcoming';
   }
   
   // 2. Check if CTF has ended
-  if (istNow > istScheduleEnd) {
+  if (istToday > istScheduleEndDate) {
     console.log('🏁 CTF has ended');
     return 'ended';
   }
@@ -345,46 +351,6 @@ ctfSchema.pre('save', function(next) {
   
   next();
 });
-// In CTF.js - Fix the isCurrentlyActive method
-ctfSchema.methods.isCurrentlyActive = function() {
-  const now = new Date();
-  
-  console.log('🔍 Backend Active Hours Check:', {
-    startTime: this.activeHours.startTime,
-    endTime: this.activeHours.endTime,
-    currentTime: now.toTimeString(),
-    currentHours24: now.getHours(),
-    currentMinutes: now.getMinutes(),
-    timezone: this.activeHours.timezone || 'UTC'
-  });
-
-  const [startHours, startMinutes] = this.activeHours.startTime.split(':').map(Number);
-  const [endHours, endMinutes] = this.activeHours.endTime.split(':').map(Number);
-
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const startMinutesTotal = startHours * 60 + startMinutes;
-  const endMinutesTotal = endHours * 60 + endMinutes;
-
-  console.log('📊 Backend Time Comparison:', {
-    currentMinutes,
-    startMinutesTotal,
-    endMinutesTotal,
-    currentTime24: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
-  });
-
-  // Handle case where active hours cross midnight
-  let isActive;
-  if (endMinutesTotal < startMinutesTotal) {
-    // Active hours cross midnight (e.g., 22:00 - 06:00)
-    isActive = currentMinutes >= startMinutesTotal || currentMinutes <= endMinutesTotal;
-  } else {
-    // Normal case (e.g., 02:00 - 18:00)
-    isActive = currentMinutes >= startMinutesTotal && currentMinutes <= endMinutesTotal;
-  }
-
-  console.log('✅ Backend Active Status:', isActive);
-  return isActive;
-};
 
 // Update canSubmit method
 ctfSchema.methods.canSubmit = function() {
@@ -404,21 +370,6 @@ ctfSchema.methods.canSubmit = function() {
   const isActive = this.isCurrentlyActive();
   console.log('✅ Backend canSubmit result:', isActive);
   return isActive;
-};
-
-ctfSchema.methods.canSubmit = function() {
-  // Check if CTF is visible, published, and active
-  if (!this.isVisible || !this.isPublished) {
-    return false;
-  }
-
-  // Use backend status as primary check
-  if (this.status?.toLowerCase() !== 'active') {
-    return false;
-  }
-
-  // Then check active hours
-  return this.isCurrentlyActive();
 };
 
 // In your CTF model (models/CTF.js) - Add these methods:
@@ -556,16 +507,6 @@ ctfSchema.methods.updateStatus = async function() {
   return this;
 };
 
-
-
-// Check if user can submit
-ctfSchema.methods.canSubmit = function() {
-  const now = new Date();
-  return this.isVisible && 
-         now >= this.schedule.startDate && 
-         now <= this.schedule.endDate && 
-         this.isCurrentlyActive();
-};
 
 // Add participant to CTF
 ctfSchema.methods.addParticipant = function(userId) {
