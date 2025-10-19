@@ -182,32 +182,135 @@ router.get("/leaderboard/global", async (req, res) => {
 // ==========================
 
 // Join CTF - Add proper status validation
+// router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const userId = req.user._id;
+
+//     if (!mongoose.Types.ObjectId.isValid(id)) {
+//       return res.status(400).json({ error: "Invalid CTF ID format" });
+//     }
+
+//     const ctf = await CTF.findById(id);
+//     if (!ctf) {
+//       return res.status(404).json({ error: "CTF not found" });
+//     }
+
+//     // Enhanced validation for joining
+//     if (!ctf.isVisible || !ctf.isPublished) {
+//       return res
+//         .status(403)
+//         .json({ error: "CTF is not available for joining" });
+//     }
+
+//     // Check if CTF is currently active
+//     const isActive = ctf.isCurrentlyActive();
+//     if (!isActive && ctf.status !== "active") {
+//       return res.status(403).json({
+//         error: "CTF is not currently active. Please check the active hours.",
+//       });
+//     }
+
+//     // Check if already joined
+//     const alreadyJoined = ctf.participants.some(
+//       (participant) => participant.user.toString() === userId.toString()
+//     );
+
+//     if (alreadyJoined) {
+//       return res.status(400).json({ error: "Already joined this CTF" });
+//     }
+
+//     // Add participant
+//     ctf.addParticipant(userId);
+//     await ctf.save();
+
+//     res.json({
+//       message: "Successfully joined CTF",
+//       ctf: {
+//         _id: ctf._id,
+//         title: ctf.title,
+//         status: ctf.status,
+//         isCurrentlyActive: isActive,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Join CTF error:", error);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// });
+
+// After Changes Deploying 
+// Join CTF - Add proper status validation
 router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id;
 
+    console.log('🔐 JOIN CTF - User attempting to join:', {
+      ctfId: id,
+      userId: userId,
+      userRole: req.user.role,
+      timestamp: new Date().toISOString()
+    });
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.log('❌ Invalid CTF ID format:', id);
       return res.status(400).json({ error: "Invalid CTF ID format" });
     }
 
     const ctf = await CTF.findById(id);
     if (!ctf) {
+      console.log('❌ CTF not found:', id);
       return res.status(404).json({ error: "CTF not found" });
     }
 
+    console.log('📋 CTF Details:', {
+      title: ctf.title,
+      isVisible: ctf.isVisible,
+      isPublished: ctf.isPublished,
+      status: ctf.status,
+      isCurrentlyActive: ctf.isCurrentlyActive(),
+      activeHours: ctf.activeHours
+    });
+
     // Enhanced validation for joining
     if (!ctf.isVisible || !ctf.isPublished) {
+      console.log('❌ CTF not available for joining:', {
+        isVisible: ctf.isVisible,
+        isPublished: ctf.isPublished
+      });
       return res
         .status(403)
-        .json({ error: "CTF is not available for joining" });
+        .json({ 
+          error: "CTF is not available for joining",
+          details: {
+            isVisible: ctf.isVisible,
+            isPublished: ctf.isPublished
+          }
+        });
     }
 
     // Check if CTF is currently active
     const isActive = ctf.isCurrentlyActive();
+    console.log('🕒 Active Status Check:', {
+      isActive: isActive,
+      backendStatus: ctf.status,
+      activeHours: ctf.activeHours,
+      currentTime: new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
+    });
+
     if (!isActive && ctf.status !== "active") {
+      console.log('❌ CTF not active:', {
+        isActive: isActive,
+        status: ctf.status
+      });
       return res.status(403).json({
         error: "CTF is not currently active. Please check the active hours.",
+        details: {
+          activeHours: ctf.activeHours,
+          currentStatus: ctf.status,
+          isCurrentlyActive: isActive
+        }
       });
     }
 
@@ -217,12 +320,19 @@ router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
     );
 
     if (alreadyJoined) {
+      console.log('❌ User already joined this CTF');
       return res.status(400).json({ error: "Already joined this CTF" });
     }
 
     // Add participant
     ctf.addParticipant(userId);
     await ctf.save();
+
+    console.log('✅ User successfully joined CTF:', {
+      ctfId: ctf._id,
+      title: ctf.title,
+      userId: userId
+    });
 
     res.json({
       message: "Successfully joined CTF",
@@ -234,7 +344,12 @@ router.post("/ctfs/:id/join", requireAuth, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Join CTF error:", error);
+    console.error('💥 Join CTF error:', {
+      error: error.message,
+      stack: error.stack,
+      ctfId: req.params.id,
+      userId: req.user?._id
+    });
     res.status(500).json({ error: "Server error" });
   }
 });
