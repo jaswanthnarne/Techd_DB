@@ -54,7 +54,7 @@ router.get("/ctfs", async (req, res) => {
       ];
     }
 
-    const ctfs = await CTF.find(filter)
+    const ctfs = await CTF.find(filter).populate("participants")
       .populate("createdBy", "fullName email")
       .select("-flag -participants")
       .sort({ createdAt: -1 })
