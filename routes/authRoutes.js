@@ -64,30 +64,111 @@ router.get('/health', (req, res) => {
   });
 });
 
-// User registration - Fixed version
+// User registration - Fixed version with specific validation errors
 router.post('/register', [
-  body('email').isEmail().withMessage('Please provide a valid email'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])/)
-    .withMessage('Password must contain uppercase, lowercase, number, and special character'),
-  body('fullName').notEmpty().withMessage('Full name is required'),
-  body('sem').notEmpty().withMessage('Semester is required'),
-body('erpNumber')
+  body('email')
+    .isEmail().withMessage('Please provide a valid email address')
+    .normalizeEmail(),
+  
+  body('password')
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+    .matches(/^(?=.*[a-z])/).withMessage('Password must contain at least one lowercase letter')
+    .matches(/^(?=.*[A-Z])/).withMessage('Password must contain at least one uppercase letter')
+    .matches(/^(?=.*\d)/).withMessage('Password must contain at least one number')
+    .matches(/^(?=.*[!@#$%^&*(),.?":{}|<>])/).withMessage('Password must contain at least one special character (!@#$%^&*(),.?":{}|<>)'),
+  
+  body('fullName')
+    .notEmpty().withMessage('Full name is required')
+    .isLength({ min: 2 }).withMessage('Full name must be at least 2 characters long')
+    .trim(),
+  
+  body('sem')
+    .notEmpty().withMessage('Semester is required')
+    .isIn(['3', '4', '5', '6', '7']).withMessage('Semester must be 3, 4, 5, 6, or 7'),
+  
+  body('erpNumber')
     .notEmpty().withMessage('ERP Number is required')
     .isNumeric().withMessage('ERP Number must contain only numbers')
-    .isLength({ min: 10 }).withMessage('ERP Number is required'),
+    .isLength({ min: 1 }).withMessage('ERP Number is required')
+    .custom((value) => {
+      if (value && value.length < 10) {
+        throw new Error('ERP Number must be at least 10 digits long');
+      }
+      return true;
+    }),
+  
   body('contactNumber')
     .optional()
     .isNumeric().withMessage('Contact number must contain only numbers')
-    .isLength({ min: 10, max: 10 }).withMessage('Contact number must be  10 digits'),
-  body('collegeName').notEmpty().withMessage('College name is required')
+    .isLength({ min: 10, max: 10 }).withMessage('Contact number must be exactly 10 digits'),
+  
+  body('collegeName')
+    .notEmpty().withMessage('College name is required')
+    .trim()
+
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      // Format errors to be more specific and user-friendly
+      const formattedErrors = errors.array().map(error => {
+        let message = error.msg;
+        
+        // Add more specific messages for common fields
+        switch (error.param) {
+          case 'email':
+            if (error.msg.includes('valid')) {
+              message = 'Please enter a valid email address (e.g., example@paruluniversity.ac.in)';
+            }
+            break;
+          case 'password':
+            if (error.msg.includes('lowercase')) {
+              message = 'Password must include at least one lowercase letter (a-z)';
+            } else if (error.msg.includes('uppercase')) {
+              message = 'Password must include at least one uppercase letter (A-Z)';
+            } else if (error.msg.includes('number')) {
+              message = 'Password must include at least one number (0-9)';
+            } else if (error.msg.includes('special')) {
+              message = 'Password must include at least one special character (!@#$%^&* etc.)';
+            } else if (error.msg.includes('8 characters')) {
+              message = 'Password must be at least 8 characters long';
+            }
+            break;
+          case 'contactNumber':
+            if (error.msg.includes('10 digits')) {
+              message = 'Contact number must be exactly 10 digits (e.g., 9876543210)';
+            } else if (error.msg.includes('numbers')) {
+              message = 'Contact number can only contain numbers';
+            }
+            break;
+          case 'erpNumber':
+            if (error.msg.includes('10 digits')) {
+              message = 'ERP Number must be at least 10 digits long';
+            } else if (error.msg.includes('numbers')) {
+              message = 'ERP Number can only contain numbers';
+            }
+            break;
+          case 'fullName':
+            if (error.msg.includes('2 characters')) {
+              message = 'Full name must be at least 2 characters long';
+            }
+            break;
+        }
+        
+        return {
+          field: error.param,
+          message: message,
+          value: error.value
+        };
+      });
+
+      console.log('❌ Validation errors:', formattedErrors);
+      
       return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: errors.array() 
+        success: false,
+        error: 'Please fix the validation errors',
+        validationErrors: formattedErrors,
+        message: `Please check the ${formattedErrors[0]?.field} field: ${formattedErrors[0]?.message}`
       });
     }
 
@@ -102,37 +183,86 @@ body('erpNumber')
       collegeName 
     } = req.body;
 
-    console.log('Registration request data:', req.body); // Debug log
+    console.log('📝 Registration request data:', { 
+      email, 
+      fullName, 
+      erpNumber,
+      contactNumber,
+      sem 
+    });
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    // Check if user already exists by email
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this email already exists' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email already registered',
+        message: 'An account with this email address already exists. Please use a different email or try logging in.',
+        field: 'email'
+      });
     }
 
     // Check if ERP number already exists
     const existingERP = await User.findOne({ erpNumber });
     if (existingERP) {
-      return res.status(400).json({ error: 'User with this ERP number already exists' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'ERP Number already registered',
+        message: 'This ERP number is already associated with an existing account.',
+        field: 'erpNumber'
+      });
     }
 
     // Generate username from email
-    const username = email.split('@')[0] + Math.random().toString(36).substring(2, 8);
+    const baseUsername = email.split('@')[0];
+    let username = baseUsername;
+    let counter = 1;
+
+    // Ensure username is unique
+    while (await User.findOne({ username })) {
+      username = `${baseUsername}${Math.random().toString(36).substring(2, 6)}`;
+      counter++;
+      if (counter > 5) {
+        username = `${baseUsername}${Date.now()}`;
+        break;
+      }
+    }
+
+    console.log('👤 Generated username:', username);
 
     // Create new user with correct field names
     const newUser = new User({
       username,
-      email,
+      email: email.toLowerCase().trim(),
       password,
-      fullName,
+      fullName: fullName.trim(),
       contactNumber: contactNumber || '',
       specialization: specialization || 'Cybersecurity',
       sem: sem || '7',
-      erpNumber,
+      erpNumber: erpNumber.toString().trim(),
       collegeName: collegeName || 'PIET',
       role: 'student',
       isVerified: true,
     });
+
+    // Validate user model before saving
+    try {
+      await newUser.validate();
+    } catch (validationError) {
+      console.log('❌ User model validation failed:', validationError);
+      const modelErrors = Object.values(validationError.errors).map(err => ({
+        field: err.path,
+        message: err.message,
+        value: err.value
+      }));
+      
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid user data',
+        validationErrors: modelErrors,
+        message: `Please check your information: ${modelErrors[0]?.message}`
+      });
+    }
 
     await newUser.save();
 
