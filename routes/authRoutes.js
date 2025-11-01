@@ -162,13 +162,15 @@ router.post('/register', [
         };
       });
 
+      const firstError = formattedErrors[0];
+
       console.log('❌ Validation errors:', formattedErrors);
       
       return res.status(400).json({ 
         success: false,
-        error: 'Please fix the validation errors',
+        error: firstError.message,
         validationErrors: formattedErrors,
-        message: `Please check the ${formattedErrors[0]?.field} field: ${formattedErrors[0]?.message}`
+        message:firstError.message
       });
     }
 
