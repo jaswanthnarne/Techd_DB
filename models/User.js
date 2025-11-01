@@ -31,17 +31,29 @@ const userSchema = new mongoose.Schema(
       enum: ["student", "admin"],
       default: "student",
     },
-    contactNumber: String,
+    contactNumber: {
+      type: String,
+      validate: {
+        validator: function(v) {
+          return /^\d{10}$/.test(v); // Ensures exactly 10 digits
+        },
+        message: "Contact number must be exactly 10 digits"
+      }
+    },
     sem: {
-      // Changed from Sem to sem (lowercase)
       type: String,
       enum: ["3", "4", "5", "6", "7"],
       default: "7",
     },
     erpNumber: {
-      // Changed from ErpNumber to erpNumber (lowercase)
       type: String,
       unique: true,
+      validate: {
+        validator: function(v) {
+          return /^\d+$/.test(v); // Ensures only numbers
+        },
+        message: "ERP number must contain only numbers"
+      }
     },
     specialization: {
       type: String,
