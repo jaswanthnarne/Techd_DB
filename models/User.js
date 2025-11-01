@@ -15,11 +15,18 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      validate: {
+        validator: function(v) {
+          return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+        },
+        message: "Please provide a valid email"
+      }
     },
     password: {
       type: String,
       required: true,
       select: false,
+      minlength: 8,
     },
     fullName: {
       type: String,
@@ -31,24 +38,41 @@ const userSchema = new mongoose.Schema(
       enum: ["student", "admin"],
       default: "student",
     },
-    contactNumber: String,
+    contactNumber: {
+      type: String,
+      validate: {
+        validator: function(v) {
+          // Allow empty string but if provided, must be exactly 10 digits
+          return !v || v === '' || /^\d{10}$/.test(v);
+        },
+        message: "Contact number must be exactly 10 digits"
+      }
+    },
     sem: {
-      // Changed from Sem to sem (lowercase)
       type: String,
       enum: ["3", "4", "5", "6", "7"],
       default: "7",
     },
     erpNumber: {
-      // Changed from ErpNumber to erpNumber (lowercase)
       type: String,
       unique: true,
+      required: true,
+      validate: {
+        validator: function(v) {
+          return /^\d+$/.test(v); // Only numbers allowed
+        },
+        message: "ERP number must contain only numbers"
+      }
     },
     specialization: {
       type: String,
       enum: ["Cybersecurity", "Artificial Intelligence", "Others"],
       default: "Cybersecurity",
     },
-    collegeName: String,
+    collegeName: {
+      type: String,
+      default: "PIET"
+    },
     expertiseLevel: {
       type: String,
       enum: ["Beginner", "Junior", "Intermediate", "Senior", "Expert"],
@@ -84,8 +108,13 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+  
+  try {
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 userSchema.methods.correctPassword = async function (
@@ -102,5 +131,10 @@ userSchema.methods.toJSON = function () {
   delete user.passwordResetExpires;
   return user;
 };
+
+// Add index for better performance
+userSchema.index({ email: 1 });
+userSchema.index({ erpNumber: 1 });
+userSchema.index({ username: 1 });
 
 module.exports = mongoose.model("User", userSchema);

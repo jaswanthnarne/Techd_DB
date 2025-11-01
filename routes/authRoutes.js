@@ -72,7 +72,14 @@ router.post('/register', [
     .withMessage('Password must contain uppercase, lowercase, number, and special character'),
   body('fullName').notEmpty().withMessage('Full name is required'),
   body('sem').notEmpty().withMessage('Semester is required'),
-  body('erpNumber').notEmpty().withMessage('ERP Number is required'),
+body('erpNumber')
+    .notEmpty().withMessage('ERP Number is required')
+    .isNumeric().withMessage('ERP Number must contain only numbers')
+    .isLength({ min: 10 }).withMessage('ERP Number is required'),
+  body('contactNumber')
+    .optional()
+    .isNumeric().withMessage('Contact number must contain only numbers')
+    .isLength({ min: 10, max: 10 }).withMessage('Contact number must be  10 digits'),
   body('collegeName').notEmpty().withMessage('College name is required')
 ], async (req, res) => {
   try {
