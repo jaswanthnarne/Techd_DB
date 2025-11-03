@@ -56,7 +56,7 @@ const userSchema = new mongoose.Schema(
     erpNumber: {
       type: String,
       unique: true,
-      required: true,
+      // required: true,
       validate: {
         validator: function(v) {
           return /^\d+$/.test(v); // Only numbers allowed
