@@ -1675,6 +1675,7 @@ router.post(
         role: reqRole,
         isVerified: true,
         isActive: true,
+        collegeName: reqRole === 'student' ? 'PIET' : "Admin",
       };
 
       // Add student-specific fields only for students
@@ -1682,7 +1683,6 @@ router.post(
         userData.specialization = specialization || 'Cybersecurity';
         userData.sem = reqSem || '7';
         userData.erpNumber = reqErpNumber;
-        userData.collegeName = "PIET";
       }
 
       // Create new user
