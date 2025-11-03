@@ -1561,7 +1561,7 @@ function getTimeRangeLabel(timeRange) {
 // User Management
 // ==========================
 
-// Create user - FIXED VERSION
+// Create user - FIXED VERSION with conditional validation
 router.post(
   "/users/create",
   requireAdmin,
@@ -1578,46 +1578,67 @@ router.post(
         "Password must contain uppercase, lowercase, number, and special character"
       ),
     body("fullName").notEmpty().trim().withMessage("Full name is required"),
-    body("erpNumber") // ✅ ADDED: ERP Number validation
-      .notEmpty()
-      .withMessage("ERP Number is required")
-      .matches(/^\d+$/)
-      .withMessage("ERP Number must contain only numbers")
-      .isLength({ min: 10 })
-      .withMessage("ERP Number must be at least 10 digits long"),
-    body("sem") // ✅ ADDED: Semester validation
-      .notEmpty()
-      .withMessage("Semester is required")
-      .isIn(['3', '4', '5', '6', '7'])
-      .withMessage("Semester must be 3, 4, 5, 6, or 7"),
-    body("contactNumber") // ✅ ADDED: Contact number validation
-      .optional()
-      .matches(/^\d{10}$/)
-      .withMessage("Contact number must be exactly 10 digits"),
+    body("role")
+      .isIn(['student', 'admin'])
+      .withMessage("Role must be either student or admin"),
   ],
   async (req, res) => {
     try {
       console.log("create user", req.body);
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res
-          .status(400)
-          .json({ 
-            success: false,
-            error: "Validation failed", 
-            details: errors.array() 
-          });
+      
+      // Custom validation based on role
+      const errors = [];
+      const { role, erpNumber, sem, contactNumber } = req.body;
+
+      // Student-specific validations
+      if (role === 'student') {
+        if (!erpNumber) {
+          errors.push({ field: 'erpNumber', message: 'ERP Number is required for students' });
+        } else if (!/^\d+$/.test(erpNumber)) {
+          errors.push({ field: 'erpNumber', message: 'ERP Number must contain only numbers' });
+        } else if (erpNumber.length < 10) {
+          errors.push({ field: 'erpNumber', message: 'ERP Number must be at least 10 digits long' });
+        }
+
+        if (!sem) {
+          errors.push({ field: 'sem', message: 'Semester is required for students' });
+        } else if (!['3', '4', '5', '6', '7'].includes(sem)) {
+          errors.push({ field: 'sem', message: 'Semester must be 3, 4, 5, 6, or 7' });
+        }
+      }
+
+      // Contact number validation (optional for both)
+      if (contactNumber && !/^\d{10}$/.test(contactNumber)) {
+        errors.push({ field: 'contactNumber', message: 'Contact number must be exactly 10 digits' });
+      }
+
+      // Check express-validator errors
+      const expressErrors = validationResult(req);
+      if (!expressErrors.isEmpty()) {
+        errors.push(...expressErrors.array().map(err => ({
+          field: err.path,
+          message: err.msg
+        })));
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({ 
+          success: false,
+          error: "Validation failed", 
+          details: errors 
+        });
       }
 
       const { 
         email, 
         password, 
         fullName, 
-        contactNumber, 
-        sem, 
+        contactNumber: reqContactNumber, 
+        sem: reqSem, 
         expertiseLevel,
-        erpNumber, // ✅ ADDED: Extract erpNumber
-        specialization 
+        erpNumber: reqErpNumber,
+        specialization,
+        role: reqRole
       } = req.body;
 
       // Check if user already exists by email
@@ -1629,33 +1650,43 @@ router.post(
         });
       }
 
-      // Check if ERP number already exists
-      const existingERP = await User.findOne({ erpNumber });
-      if (existingERP) {
-        return res.status(400).json({ 
-          success: false,
-          error: "User with this ERP number already exists" 
-        });
+      // Check if ERP number already exists (only for students)
+      if (reqRole === 'student') {
+        const existingERP = await User.findOne({ erpNumber: reqErpNumber });
+        if (existingERP) {
+          return res.status(400).json({ 
+            success: false,
+            error: "User with this ERP number already exists" 
+          });
+        }
       }
 
       // Generate username from email
       const username = email.split('@')[0] + Math.random().toString(36).substring(2, 8);
 
-      // Create new user with ALL required fields
-      const newUser = new User({
+      // Prepare user data based on role
+      const userData = {
         username,
         email: email.toLowerCase().trim(),
         password,
         fullName: fullName.trim(),
-        contactNumber: contactNumber || '',
-        specialization: specialization || 'Cybersecurity',
-        sem: sem || '7', // ✅ ADDED: Use sem instead of Sem
-        erpNumber: erpNumber, // ✅ ADDED: Required field
-        collegeName: "PIET", // ✅ ADDED: Default college name
+        contactNumber: reqContactNumber || '',
         expertiseLevel: expertiseLevel || 'Beginner',
-        role: 'student',
+        role: reqRole,
         isVerified: true,
-      });
+        isActive: true,
+      };
+
+      // Add student-specific fields only for students
+      if (reqRole === 'student') {
+        userData.specialization = specialization || 'Cybersecurity';
+        userData.sem = reqSem || '7';
+        userData.erpNumber = reqErpNumber;
+        userData.collegeName = "PIET";
+      }
+
+      // Create new user
+      const newUser = new User(userData);
 
       // Validate the user before saving
       try {
@@ -1675,11 +1706,11 @@ router.post(
 
       await newUser.save();
 
-      // Send welcome email
+      // Send welcome email (customized based on role)
       try {
         await sendMail({
           email: newUser.email,
-          subject: 'Welcome to TechD CTF Platform - Your Account Details',
+          subject: `Welcome to TechD CTF Platform - Your ${newUser.role === 'admin' ? 'Admin' : 'Student'} Account`,
           message: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0;">
   <div style="background: #dc2626; color: white; padding: 25px; text-align: center;">
@@ -1693,7 +1724,7 @@ router.post(
     </p>
     
     <p style="color: #4b5563; margin-bottom: 25px;">
-      Your account has been successfully created. Here are your login credentials:
+      Your <strong>${newUser.role}</strong> account has been successfully created. Here are your login credentials:
     </p>
     
     <div style="background: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0; border: 1px solid #e5e7eb;">
@@ -1701,8 +1732,11 @@ router.post(
       <table style="width: 100%;">
         <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold; width: 120px;">Email:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${newUser.email}</td></tr>
         <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Password:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${password}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Role:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; text-transform: capitalize;">${newUser.role}</td></tr>
+        ${newUser.role === 'student' ? `
         <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Semester:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${newUser.sem}</td></tr>
         <tr><td style="padding: 8px 0; font-weight: bold;">ERP Number:</td><td style="padding: 8px 0;">${newUser.erpNumber}</td></tr>
+        ` : ''}
       </table>
     </div>
 
@@ -1714,7 +1748,12 @@ router.post(
       <a href="${process.env.FRONTEND_URL}/login" style="background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
         Login to Platform
       </a>
-      <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 14px;">Access your account to start challenges</p>
+      <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 14px;">
+        ${newUser.role === 'admin' 
+          ? 'Access the admin dashboard to manage the platform' 
+          : 'Start participating in CTF challenges and improve your skills'
+        }
+      </p>
     </div>
 
     <div style="background: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #dc2626;">
@@ -1741,7 +1780,7 @@ router.post(
 
       res.status(201).json({
         success: true,
-        message: "User created successfully",
+        message: `${newUser.role.charAt(0).toUpperCase() + newUser.role.slice(1)} user created successfully`,
         user: userResponse,
       });
     } catch (error) {
@@ -1776,7 +1815,7 @@ router.post(
     }
   }
 );
-
+  
 // Get all users
 router.get("/users", requireAdmin, async (req, res) => {
   try {
