@@ -1561,7 +1561,7 @@ function getTimeRangeLabel(timeRange) {
 // User Management
 // ==========================
 
-// Create user
+// Create user - FIXED VERSION
 router.post(
   "/users/create",
   requireAdmin,
@@ -1578,48 +1578,109 @@ router.post(
         "Password must contain uppercase, lowercase, number, and special character"
       ),
     body("fullName").notEmpty().trim().withMessage("Full name is required"),
+    body("erpNumber") // ✅ ADDED: ERP Number validation
+      .notEmpty()
+      .withMessage("ERP Number is required")
+      .matches(/^\d+$/)
+      .withMessage("ERP Number must contain only numbers")
+      .isLength({ min: 10 })
+      .withMessage("ERP Number must be at least 10 digits long"),
+    body("sem") // ✅ ADDED: Semester validation
+      .notEmpty()
+      .withMessage("Semester is required")
+      .isIn(['3', '4', '5', '6', '7'])
+      .withMessage("Semester must be 3, 4, 5, 6, or 7"),
+    body("contactNumber") // ✅ ADDED: Contact number validation
+      .optional()
+      .matches(/^\d{10}$/)
+      .withMessage("Contact number must be exactly 10 digits"),
   ],
   async (req, res) => {
     try {
       console.log("create user", req.body);
       const errors = validationResult(req);
-      if (!errors.isEmpty())
+      if (!errors.isEmpty()) {
         return res
           .status(400)
-          .json({ error: "Validation failed", details: errors.array() });
+          .json({ 
+            success: false,
+            error: "Validation failed", 
+            details: errors.array() 
+          });
+      }
 
-      const { email, password, fullName, contactNumber, Sem, expertiseLevel } =
-        req.body;
+      const { 
+        email, 
+        password, 
+        fullName, 
+        contactNumber, 
+        sem, 
+        expertiseLevel,
+        erpNumber, // ✅ ADDED: Extract erpNumber
+        specialization 
+      } = req.body;
 
+      // Check if user already exists by email
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        return res
-          .status(400)
-          .json({ error: "User with this email already exists" });
+        return res.status(400).json({ 
+          success: false,
+          error: "User with this email already exists" 
+        });
+      }
+
+      // Check if ERP number already exists
+      const existingERP = await User.findOne({ erpNumber });
+      if (existingERP) {
+        return res.status(400).json({ 
+          success: false,
+          error: "User with this ERP number already exists" 
+        });
       }
 
       // Generate username from email
-      const username =
-        email.split("@")[0] + Math.random().toString(36).substring(2, 8);
+      const username = email.split('@')[0] + Math.random().toString(36).substring(2, 8);
 
+      // Create new user with ALL required fields
       const newUser = new User({
         username,
-        email,
+        email: email.toLowerCase().trim(),
         password,
-        fullName,
-        contactNumber: contactNumber || "",
-        Sem: Sem || "7",
-        expertiseLevel: expertiseLevel || "Beginner",
+        fullName: fullName.trim(),
+        contactNumber: contactNumber || '',
+        specialization: specialization || 'Cybersecurity',
+        sem: sem || '7', // ✅ ADDED: Use sem instead of Sem
+        erpNumber: erpNumber, // ✅ ADDED: Required field
+        collegeName: "PIET", // ✅ ADDED: Default college name
+        expertiseLevel: expertiseLevel || 'Beginner',
+        role: 'student',
         isVerified: true,
       });
+
+      // Validate the user before saving
+      try {
+        await newUser.validate();
+      } catch (validationError) {
+        console.log('❌ User validation failed:', validationError);
+        const errors = Object.values(validationError.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        return res.status(400).json({ 
+          success: false,
+          error: 'User validation failed',
+          details: errors 
+        });
+      }
 
       await newUser.save();
 
       // Send welcome email
-      await sendMail({
-        email: newUser.email,
-        subject: "Welcome to TechD CTF Platform - Your Account Details",
-        message: `
+      try {
+        await sendMail({
+          email: newUser.email,
+          subject: 'Welcome to TechD CTF Platform - Your Account Details',
+          message: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0;">
   <div style="background: #dc2626; color: white; padding: 25px; text-align: center;">
     <h1 style="margin: 0; font-size: 24px;">TECHD CTF PLATFORM</h1>
@@ -1638,16 +1699,10 @@ router.post(
     <div style="background: #f8fafc; padding: 20px; border-radius: 6px; margin: 20px 0; border: 1px solid #e5e7eb;">
       <h3 style="color: #dc2626; text-align: center; margin: 0 0 15px 0;">Account Credentials</h3>
       <table style="width: 100%;">
-        <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold; width: 120px;">Email:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${
-          newUser.email
-        }</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold; width: 120px;">Email:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${newUser.email}</td></tr>
         <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Password:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${password}</td></tr>
-        <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Semester:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${
-          newUser.sem
-        }</td></tr>
-        <tr><td style="padding: 8px 0; font-weight: bold;">ERP Number:</td><td style="padding: 8px 0;">${
-          newUser.erpNumber
-        }</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; font-weight: bold;">Semester:</td><td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${newUser.sem}</td></tr>
+        <tr><td style="padding: 8px 0; font-weight: bold;">ERP Number:</td><td style="padding: 8px 0;">${newUser.erpNumber}</td></tr>
       </table>
     </div>
 
@@ -1656,9 +1711,7 @@ router.post(
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${
-        process.env.FRONTEND_URL
-      }/login" style="background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+      <a href="${process.env.FRONTEND_URL}/login" style="background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
         Login to Platform
       </a>
       <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 14px;">Access your account to start challenges</p>
@@ -1677,18 +1730,49 @@ router.post(
   </div>
 </div>
   `,
-      });
+        });
+      } catch (emailError) {
+        console.error('Failed to send welcome email:', emailError);
+        // Don't fail the request if email fails
+      }
 
       const userResponse = newUser.toJSON();
       delete userResponse.password;
 
       res.status(201).json({
+        success: true,
         message: "User created successfully",
         user: userResponse,
       });
     } catch (error) {
       console.error("Create user error:", error);
-      res.status(500).json({ error: "Server error" });
+      
+      // Handle MongoDB duplicate key errors
+      if (error.name === 'MongoError' && error.code === 11000) {
+        const field = Object.keys(error.keyValue)[0];
+        return res.status(400).json({ 
+          success: false,
+          error: `${field} already exists` 
+        });
+      }
+      
+      // Handle validation errors
+      if (error.name === 'ValidationError') {
+        const errors = Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        return res.status(400).json({ 
+          success: false,
+          error: 'Validation failed',
+          details: errors 
+        });
+      }
+      
+      res.status(500).json({ 
+        success: false,
+        error: "Server error" 
+      });
     }
   }
 );
