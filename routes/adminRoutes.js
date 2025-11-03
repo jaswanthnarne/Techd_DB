@@ -1561,7 +1561,7 @@ function getTimeRangeLabel(timeRange) {
 // User Management
 // ==========================
 
-// Create user - FIXED VERSION with conditional validation
+// Create user - FIXED VERSION with role-specific validation
 router.post(
   "/users/create",
   requireAdmin,
@@ -1573,7 +1573,7 @@ router.post(
     body("password")
       .isLength({ min: 8 })
       .withMessage("Password must be at least 8 characters long")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/)
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/)
       .withMessage(
         "Password must contain uppercase, lowercase, number, and special character"
       ),
@@ -1590,7 +1590,7 @@ router.post(
       const errors = [];
       const { role, erpNumber, sem, contactNumber } = req.body;
 
-      // Student-specific validations
+      // Student-specific validations - ONLY for student role
       if (role === 'student') {
         if (!erpNumber) {
           errors.push({ field: 'erpNumber', message: 'ERP Number is required for students' });
@@ -1604,6 +1604,16 @@ router.post(
           errors.push({ field: 'sem', message: 'Semester is required for students' });
         } else if (!['3', '4', '5', '6', '7'].includes(sem)) {
           errors.push({ field: 'sem', message: 'Semester must be 3, 4, 5, 6, or 7' });
+        }
+      }
+
+      // Admin-specific validations - ERP and sem should NOT be present for admin
+      if (role === 'admin') {
+        if (erpNumber) {
+          errors.push({ field: 'erpNumber', message: 'ERP Number should not be provided for admin users' });
+        }
+        if (sem) {
+          errors.push({ field: 'sem', message: 'Semester should not be provided for admin users' });
         }
       }
 
@@ -1651,7 +1661,7 @@ router.post(
       }
 
       // Check if ERP number already exists (only for students)
-      if (reqRole === 'student') {
+      if (reqRole === 'student' && reqErpNumber) {
         const existingERP = await User.findOne({ erpNumber: reqErpNumber });
         if (existingERP) {
           return res.status(400).json({ 
