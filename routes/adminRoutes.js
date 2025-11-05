@@ -2376,7 +2376,6 @@ router.get("/analytics/comprehensive", requireAdmin, async (req, res) => {
   }
 });
 
-// Get user login history
 // Recent logins endpoint
 router.get("/recent-logins", requireAdmin, async (req, res) => {
   try {
@@ -3332,6 +3331,213 @@ router.get(
       });
     } catch (error) {
       console.error("Get submission screenshot error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+// Bulk approve submissions
+router.post(
+  "/submissions/bulk-approve",
+  requireAdmin,
+  [
+    body("submissionIds")
+      .isArray()
+      .withMessage("Submission IDs array is required")
+      .isLength({ min: 1 })
+      .withMessage("At least one submission ID is required"),
+    body("feedback").optional().trim(),
+    body("points")
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage("Points must be a positive integer"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: errors.array(),
+        });
+      }
+
+      const { submissionIds, feedback, points } = req.body;
+      const adminId = req.admin._id;
+
+      // Validate all submission IDs
+      const invalidIds = submissionIds.filter(
+        (id) => !mongoose.Types.ObjectId.isValid(id)
+      );
+      if (invalidIds.length > 0) {
+        return res.status(400).json({
+          error: "Invalid submission ID format",
+          details: invalidIds,
+        });
+      }
+
+      const results = await Promise.all(
+        submissionIds.map(async (submissionId) => {
+          try {
+            const submission = await Submission.findById(submissionId)
+              .populate("user", "fullName email")
+              .populate("ctf", "title points maxAttempts");
+
+            if (!submission) {
+              return {
+                submissionId,
+                success: false,
+                error: "Submission not found",
+              };
+            }
+
+            if (submission.submissionStatus !== "pending") {
+              return {
+                submissionId,
+                success: false,
+                error: "Submission has already been reviewed",
+              };
+            }
+
+            // Calculate points - use provided points or CTF default points
+            const awardedPoints =
+              points !== undefined ? parseInt(points) : submission.ctf.points;
+
+            // Update submission
+            submission.submissionStatus = "approved";
+            submission.isCorrect = true;
+            submission.points = awardedPoints;
+            submission.adminFeedback =
+              feedback || "Great job! Your submission has been approved.";
+            submission.reviewedAt = new Date();
+            submission.reviewedBy = adminId;
+
+            await submission.save();
+
+            // Update CTF participant
+            const ctf = await CTF.findById(submission.ctf._id);
+            if (ctf) {
+              const participant = ctf.participants.find(
+                (p) => p.user.toString() === submission.user._id.toString()
+              );
+
+              if (participant) {
+                participant.isCorrect = true;
+                participant.pointsEarned = awardedPoints;
+                participant.submittedAt = new Date();
+                participant.hasPendingSubmission = false;
+
+                // Update attempts if needed
+                if (participant.attempts < submission.attemptNumber) {
+                  participant.attempts = submission.attemptNumber;
+                }
+              } else {
+                // Add participant if not exists
+                ctf.participants.push({
+                  user: submission.user._id,
+                  joinedAt: new Date(),
+                  submittedAt: new Date(),
+                  isCorrect: true,
+                  pointsEarned: awardedPoints,
+                  attempts: submission.attemptNumber || 1,
+                  hasPendingSubmission: false,
+                });
+              }
+
+              ctf.correctSubmissions += 1;
+              await ctf.save();
+            }
+
+            // Send approval email
+            try {
+              await sendMail({
+                email: submission.user.email,
+                subject: `🎉 CTF Submission Approved - ${submission.ctf.title}`,
+                message: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e0e0e0;">
+  <div style="background: #28a745; color: white; padding: 25px; text-align: center;">
+    <h2 style="margin: 0;">🎉 Submission Approved!</h2>
+  </div>
+  
+  <div style="padding: 30px;">
+    <p style="color: #1f2937; margin-bottom: 15px;">
+      Hello <strong>${submission.user.fullName}</strong>,
+    </p>
+    
+    <p style="color: #4b5563; margin-bottom: 20px;">
+      Great news! Your submission for <strong>${submission.ctf.title}</strong> has been approved.
+    </p>
+    
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0; border: 1px solid #e5e7eb;">
+      <h3 style="color: #28a745; margin: 0 0 15px 0; text-align: center;">Submission Details</h3>
+      <table style="width: 100%;">
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #dee2e6; font-weight: bold; width: 120px;">Challenge:</td><td style="padding: 8px 0; border-bottom: 1px solid #dee2e6;">${submission.ctf.title}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #dee2e6; font-weight: bold;">Points Awarded:</td><td style="padding: 8px 0; border-bottom: 1px solid #dee2e6; color: #28a745; font-weight: bold;">${awardedPoints}</td></tr>
+        <tr><td style="padding: 8px 0; font-weight: bold;">Status:</td><td style="padding: 8px 0; color: #28a745; font-weight: bold;">Approved ✅</td></tr>
+      </table>
+    </div>
+
+    ${
+      feedback
+        ? `
+    <div style="background: #e7f3ff; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #007bff;">
+      <p style="color: #007bff; font-weight: bold; margin: 0 0 8px 0;">Admin Feedback:</p>
+      <p style="color: #1f2937; margin: 0;">${feedback}</p>
+    </div>
+    `
+        : ""
+    }
+
+    <p style="color: #4b5563; margin-bottom: 25px;">
+      Congratulations on successfully completing this challenge! Your points have been added to your total score.
+    </p>
+    
+    <div style="text-align: center; margin: 25px 0;">
+      <a href="${process.env.FRONTEND_URL}/dashboard" 
+         style="background: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+        View Dashboard
+      </a>
+    </div>
+  </div>
+  
+  <div style="background: #f4f4f4; padding: 15px; text-align: center; font-size: 12px; color: #555;">
+    © ${new Date().getFullYear()} CTF Platform. All rights reserved.
+  </div>
+</div>
+                `,
+              });
+            } catch (emailError) {
+              console.error("Failed to send approval email:", emailError);
+            }
+
+            return {
+              submissionId,
+              success: true,
+              title: submission.ctf.title,
+              user: submission.user.fullName,
+              points: awardedPoints,
+            };
+          } catch (error) {
+            return {
+              submissionId,
+              success: false,
+              error: error.message,
+            };
+          }
+        })
+      );
+
+      const successful = results.filter((r) => r.success);
+      const failed = results.filter((r) => !r.success);
+
+      res.json({
+        message: `Bulk approval completed: ${successful.length} successful, ${failed.length} failed`,
+        results: {
+          successful,
+          failed,
+        },
+      });
+    } catch (error) {
+      console.error("Bulk approve submissions error:", error);
       res.status(500).json({ error: "Server error" });
     }
   }

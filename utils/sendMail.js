@@ -31,7 +31,7 @@ const sendMail = async (options) => {
     // 3. Define Email Options
     const mailOptions = {
       from: {
-        name: "Kira Security Platform",
+        name: "CTF TechD Admin",
         address: process.env.EMAIL_USER
       },
       to: options.email,
