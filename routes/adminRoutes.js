@@ -2620,8 +2620,6 @@ router.post("/bulk/users/deactivate", requireAdmin, async (req, res) => {
   }
 });
 
-// Add these routes to the adminRoutes.js file
-
 // ==========================
 // SCREENSHOT REVIEW ROUTES
 // ==========================
@@ -2665,7 +2663,7 @@ router.get("/submissions/pending", requireAdmin, async (req, res) => {
   }
 });
 
-// Get all submissions with filtering
+// Get all susbmissions with filtering
 router.get("/submissions", requireAdmin, async (req, res) => {
   try {
     const {
