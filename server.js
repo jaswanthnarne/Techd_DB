@@ -27,10 +27,14 @@ connectDB();
 
 // CORS configuration for Vercel
 const allowedOrigins = [
+  'www.techdctf.in',
+  'https://www.techdctf.in',
+  'techdctf.in',
   'https://ctftechd.vercel.app',
   'https://ctfchallange.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
+  ''
 ];
 
 // Security Middleware
