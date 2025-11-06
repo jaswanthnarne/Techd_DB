@@ -3572,7 +3572,7 @@ router.post(
       const adminId = req.admin._id;
 
       console.log(
-        Marking `submission ${submissionId} for review by admin ${adminId}`
+        `Marking submission ${submissionId} for review by admin ${adminId}`
       );
       console.log("Review reason:", reviewReason);
 
@@ -3902,5 +3902,6 @@ router.get("/stats/submissions", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 module.exports = { router, requireAdmin };
