@@ -2626,23 +2626,29 @@ router.post("/bulk/users/deactivate", requireAdmin, async (req, res) => {
 // SCREENSHOT REVIEW ROUTES
 // ==========================
 
-// Get all pending submissions
+// Enhanced pending submissions endpoint that excludes marked ones when requested
 router.get("/submissions/pending", requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, excludeMarked = "false" } = req.query;
 
-    const submissions = await Submission.find({
+    let filter = {
       submissionStatus: "pending",
-    })
+    };
+
+    // Option to exclude marked submissions from regular pending list
+    if (excludeMarked === "true") {
+      filter.markedForReview = { $ne: true };
+    }
+
+    const submissions = await Submission.find(filter)
       .populate("user", "fullName email")
       .populate("ctf", "title category points")
-      .sort({ submittedAt: 1 }) // Oldest first
+      .populate("markedBy", "fullName email")
+      .sort({ submittedAt: 1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    const total = await Submission.countDocuments({
-      submissionStatus: "pending",
-    });
+    const total = await Submission.countDocuments(filter);
 
     res.json({
       submissions,
