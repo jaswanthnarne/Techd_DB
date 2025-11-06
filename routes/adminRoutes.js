@@ -3543,4 +3543,360 @@ router.post(
   }
 );
 
+// ==========================
+// SUBMISSION REVIEW MARKING ROUTES
+// ==========================
+
+// Mark submission for review
+router.post(
+  "/submissions/:submissionId/mark-for-review",
+  requireAdmin,
+  [body("reviewReason").notEmpty().withMessage("Review reason is required")],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: errors.array(),
+        });
+      }
+      console.log("Mark submission for review request body:", req.body);
+
+      const { submissionId } = req.params;
+      const { reviewReason } = req.body;
+      const adminId = req.admin._id;
+
+      console.log(
+        Marking `submission ${submissionId} for review by admin ${adminId}`
+      );
+      console.log("Review reason:", reviewReason);
+
+      if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+        return res.status(400).json({ error: "Invalid submission ID format" });
+      }
+
+      const submission = await Submission.findById(submissionId);
+
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (submission.submissionStatus !== "pending") {
+        return res.status(400).json({
+          error: "Only pending submissions can be marked for review",
+        });
+      }
+
+      if (submission.markedForReview) {
+        return res.status(400).json({
+          error: "Submission is already marked for review",
+        });
+      }
+
+      // Mark submission for review
+      submission.markedForReview = true;
+      submission.markedAt = new Date();
+      submission.markedBy = adminId;
+      submission.reviewReason = reviewReason;
+
+      await submission.save();
+      console.log("Submission marked for review:", submission);
+
+      // Populate the response
+      await submission.populate("markedBy", "fullName email");
+      await submission.populate("user", "fullName email");
+      await submission.populate("ctf", "title category");
+
+      res.json({
+        message: "Submission marked for review successfully",
+        submission: {
+          _id: submission._id,
+          markedForReview: submission.markedForReview,
+          markedAt: submission.markedAt,
+          markedBy: submission.markedBy,
+          reviewReason: submission.reviewReason,
+          user: submission.user,
+          ctf: submission.ctf,
+          submissionStatus: submission.submissionStatus,
+        },
+      });
+    } catch (error) {
+      console.error("Mark submission for review error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+// Unmark submission from review
+router.post(
+  "/submissions/:submissionId/unmark-review",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const adminId = req.admin._id;
+
+      if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+        return res.status(400).json({ error: "Invalid submission ID format" });
+      }
+
+      const submission = await Submission.findById(submissionId);
+
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (!submission.markedForReview) {
+        return res.status(400).json({
+          error: "Submission is not marked for review",
+        });
+      }
+
+      // Unmark submission from review
+      submission.markedForReview = false;
+      submission.reviewNotes.push({
+        note: `Unmarked from review by admin`,
+        addedBy: adminId,
+      });
+
+      await submission.save();
+
+      // Populate the response
+      await submission.populate("user", "fullName email");
+      await submission.populate("ctf", "title category");
+
+      res.json({
+        message: "Submission unmarked from review successfully",
+        submission: {
+          _id: submission._id,
+          markedForReview: submission.markedForReview,
+          user: submission.user,
+          ctf: submission.ctf,
+          submissionStatus: submission.submissionStatus,
+          reviewNotes: submission.reviewNotes,
+        },
+      });
+    } catch (error) {
+      console.error("Unmark submission from review error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+// Add review note to a marked submission
+router.post(
+  "/submissions/:submissionId/review-notes",
+  requireAdmin,
+  [body("note").notEmpty().withMessage("Note is required")],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: errors.array(),
+        });
+      }
+
+      const { submissionId } = req.params;
+      const { note } = req.body;
+      const adminId = req.admin._id;
+
+      if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+        return res.status(400).json({ error: "Invalid submission ID format" });
+      }
+
+      const submission = await Submission.findById(submissionId);
+
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      if (!submission.markedForReview) {
+        return res.status(400).json({
+          error: "Cannot add notes to submission not marked for review",
+        });
+      }
+
+      // Add review note
+      submission.reviewNotes.push({
+        note,
+        addedBy: adminId,
+      });
+
+      await submission.save();
+
+      // Populate the newly added note
+      await submission.populate("reviewNotes.addedBy", "fullName email");
+
+      res.json({
+        message: "Review note added successfully",
+        submission: {
+          _id: submission._id,
+          reviewNotes: submission.reviewNotes,
+        },
+      });
+    } catch (error) {
+      console.error("Add review note error:", error);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
+
+// Get submissions marked for review
+router.get("/marked-for-review/submissions", requireAdmin, async (req, res) => {
+  try {
+    console.log("Fetching submissions marked for review");
+    const { page = 1, limit = 20 } = req.query;
+
+    const submissions = await Submission.find({
+      markedForReview: true,
+      submissionStatus: "pending",
+    })
+      .populate("user", "fullName email expertiseLevel")
+      .populate("ctf", "title category points")
+      .populate("markedBy", "fullName email")
+      .populate("reviewNotes.addedBy", "fullName email")
+      .sort({ markedAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Submission.countDocuments({
+      markedForReview: true,
+      submissionStatus: "pending",
+    });
+
+    console.log(
+      "Fetched submissions marked for review successfully",
+      submissions
+    );
+    console.log(`Total marked for review submissions: ${total}`);
+    console.log(`Returning page ${page} with limit ${limit}`);
+
+    res.json({
+      submissions,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get marked for review submissions error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Enhanced submission statistics with marked submissions count
+router.get("/stats/submissions", requireAdmin, async (req, res) => {
+  try {
+    const { timeRange = "all" } = req.query;
+
+    let dateFilter = {};
+    const now = new Date();
+
+    switch (timeRange) {
+      case "24h":
+        dateFilter.submittedAt = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
+        break;
+      case "7d":
+        dateFilter.submittedAt = {
+          $gte: new Date(now - 7 * 24 * 60 * 60 * 1000),
+        };
+        break;
+      case "30d":
+        dateFilter.submittedAt = {
+          $gte: new Date(now - 30 * 24 * 60 * 60 * 1000),
+        };
+        break;
+    }
+
+    const [statusStats, totalStats, markedStats] = await Promise.all([
+      // Status distribution
+      Submission.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: "$submissionStatus",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+
+      // Total statistics
+      Submission.aggregate([
+        { $match: dateFilter },
+        {
+          $group: {
+            _id: null,
+            totalSubmissions: { $sum: 1 },
+            pendingSubmissions: {
+              $sum: {
+                $cond: [{ $eq: ["$submissionStatus", "pending"] }, 1, 0],
+              },
+            },
+            approvedSubmissions: {
+              $sum: {
+                $cond: [{ $eq: ["$submissionStatus", "approved"] }, 1, 0],
+              },
+            },
+            rejectedSubmissions: {
+              $sum: {
+                $cond: [{ $eq: ["$submissionStatus", "rejected"] }, 1, 0],
+              },
+            },
+            totalPoints: { $sum: "$points" },
+            averagePoints: { $avg: "$points" },
+          },
+        },
+      ]),
+
+      // Marked for review statistics
+      Submission.aggregate([
+        {
+          $match: {
+            ...dateFilter,
+            submissionStatus: "pending",
+          },
+        },
+        {
+          $group: {
+            _id: "$markedForReview",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const markedForReviewCount =
+      markedStats.find((stat) => stat._id === true)?.count || 0;
+    const regularPendingCount =
+      markedStats.find((stat) => stat._id === false)?.count || 0;
+
+    const stats = {
+      statusDistribution: statusStats,
+      totals: totalStats[0] || {
+        totalSubmissions: 0,
+        pendingSubmissions: 0,
+        approvedSubmissions: 0,
+        rejectedSubmissions: 0,
+        totalPoints: 0,
+        averagePoints: 0,
+      },
+      markedSubmissions: {
+        markedForReview: markedForReviewCount,
+        regularPending: regularPendingCount,
+      },
+      timeRange: timeRange,
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error("Get submission stats error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 module.exports = { router, requireAdmin };

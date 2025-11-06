@@ -13,7 +13,8 @@ const submissionSchema = new mongoose.Schema({
   },
   flag: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   },
   isCorrect: {
     type: Boolean,
@@ -51,6 +52,32 @@ const submissionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin'
   },
+  markedForReview: {
+      type: Boolean,
+      default: false,
+    },
+    markedAt: Date,
+    markedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+    },
+    reviewReason: {
+      type: String,
+      default: "",
+    },
+    reviewNotes: [
+      {
+        note: String,
+        addedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Admin",
+        },
+        addedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   ipAddress: String,
   userAgent: String,
   attemptNumber: {
