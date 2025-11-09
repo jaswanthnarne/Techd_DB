@@ -617,7 +617,13 @@ router.post(
   "/ctfs/:id/submit-with-screenshot",
   requireAuth,
   upload.single("screenshot"),
-  [body("flag").notEmpty().withMessage("Flag is required")],
+  [
+    body("flag")
+      .notEmpty()
+      .withMessage("Flag is required")
+      .isLength({ min: 3 })
+      .withMessage("Flag must be at least 3 characters"),
+  ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -632,14 +638,6 @@ router.post(
       const { flag } = req.body;
       const userId = req.user._id;
 
-      console.log("📥 Received submission request:", {
-        ctfId: id,
-        userId: userId,
-        hasFile: !!req.file,
-        flag: flag,
-        currentTime: new Date().toLocaleString(),
-      });
-
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ error: "Invalid CTF ID format" });
       }
@@ -649,6 +647,16 @@ router.post(
         return res.status(400).json({ error: "Screenshot is required" });
       }
 
+      // Validate file type and size
+      if (!req.file.mimetype.startsWith("image/")) {
+        return res.status(400).json({ error: "Only image files are allowed" });
+      }
+
+      if (req.file.size > 4 * 1024 * 1024) {
+        return res
+          .status(400)
+          .json({ error: "File size must be less than 4MB" });
+      }
       const ctf = await CTF.findById(id);
       if (!ctf) {
         return res.status(404).json({ error: "CTF not found" });
@@ -799,17 +807,22 @@ router.post(
 );
 
 // Edit submission (replace screenshot)
-// Edit submission (replace screenshot)
 router.put(
   "/submissions/:submissionId/screenshot",
   requireAuth,
   upload.single("screenshot"),
+  [
+    body("flag")
+      .notEmpty()
+      .withMessage("Flag is required")
+      .isLength({ min: 3 })
+      .withMessage("Flag must be at least 3 characters"),
+  ],
   async (req, res) => {
     try {
       const { submissionId } = req.params;
       const userId = req.user._id;
-
-      console.log("Edit Submission ID : ", submissionId);
+      const { flag } = req.body;
 
       if (!mongoose.Types.ObjectId.isValid(submissionId)) {
         return res.status(400).json({ error: "Invalid submission ID format" });
@@ -817,6 +830,16 @@ router.put(
 
       if (!req.file) {
         return res.status(400).json({ error: "New screenshot is required" });
+      }
+
+      if (!req.file.mimetype.startsWith("image/")) {
+        return res.status(400).json({ error: "Only image files are allowed" });
+      }
+
+      if (req.file.size > 4 * 1024 * 1024) {
+        return res
+          .status(400)
+          .json({ error: "File size must be less than 4MB" });
       }
 
       const submission = await Submission.findById(submissionId).populate(
@@ -838,13 +861,6 @@ router.put(
           error: "Cannot edit submission that has already been reviewed",
         });
       }
-
-      // ✅ REMOVE THIS CHECK - Allow editing regardless of current CTF active hours
-      // if (!submission.ctf.canSubmit()) {
-      //   return res.status(400).json({
-      //     error: "Cannot edit submission outside CTF active hours",
-      //   });
-      // }
 
       // Only check if CTF is still visible/published
       if (!submission.ctf.isVisible || !submission.ctf.isPublished) {
@@ -878,6 +894,10 @@ router.put(
         uploadedAt: new Date(),
       };
 
+      submission.flag = flag.trim(); // Update the flag
+      submission.submittedAt = new Date(); // Update submission time
+      // submission.attemptNumber = (submission.attemptNumber || 0) + 1; // Increment attempt number
+
       submission.submittedAt = new Date(); // Update submission time
       await submission.save();
 
@@ -887,6 +907,8 @@ router.put(
           _id: submission._id,
           submissionStatus: submission.submissionStatus,
           screenshot: submission.screenshot,
+          flag: submission.flag,
+          // attemptNumber: submission.attemptNumber,
         },
       });
     } catch (error) {
@@ -895,7 +917,6 @@ router.put(
     }
   }
 );
-
 
 
 // Get all CTFs with user's submissions and screenshots
