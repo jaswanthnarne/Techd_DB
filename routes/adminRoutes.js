@@ -1829,7 +1829,7 @@ router.post(
 // Get all users
 router.get("/users", requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = "" } = req.query;
+    const { search = "" } = req.query;
 
     const filter = {};
     if (search) {
@@ -1843,20 +1843,13 @@ router.get("/users", requireAdmin, async (req, res) => {
       .select(
         "-password -passwordResetToken -passwordResetExpires -loginHistory"
       )
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 });
 
-    const total = await User.countDocuments(filter);
+    const total = users.length;
 
     res.json({
       users,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      total,
     });
   } catch (error) {
     console.error("Get users error:", error);
