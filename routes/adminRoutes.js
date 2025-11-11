@@ -3905,5 +3905,312 @@ router.get("/stats/submissions", requireAdmin, async (req, res) => {
   }
 });
 
+// ==========================
+// Leaderboard & Student Analytics
+// ==========================
+
+// Get comprehensive leaderboard
+router.get("/leaderboard", requireAdmin, async (req, res) => {
+  try {
+    const { timeRange = "all", category = "all", limit = 100 } = req.query;
+
+    // Calculate date filter based on timeRange
+    let dateFilter = {};
+    const now = new Date();
+
+    switch (timeRange) {
+      case "24h":
+        dateFilter = { 
+          "participants.submittedAt": { 
+            $gte: new Date(now - 24 * 60 * 60 * 1000) 
+          } 
+        };
+        break;
+      case "7d":
+        dateFilter = { 
+          "participants.submittedAt": { 
+            $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) 
+          } 
+        };
+        break;
+      case "30d":
+        dateFilter = { 
+          "participants.submittedAt": { 
+            $gte: new Date(now - 30 * 24 * 60 * 60 * 1000) 
+          } 
+        };
+        break;
+      // 'all' includes all time
+    }
+
+    // Category filter
+    let categoryFilter = {};
+    if (category !== "all") {
+      categoryFilter = { category };
+    }
+
+    // Get all CTFs with participants
+    const ctfs = await CTF.find({
+      ...categoryFilter,
+      "participants.isCorrect": true
+    })
+      .populate("participants.user", "fullName email expertiseLevel specialization sem")
+      .select("title category points participants");
+
+    // Calculate student statistics
+    const studentStats = {};
+
+    ctfs.forEach(ctf => {
+      ctf.participants.forEach(participant => {
+        if (participant.isCorrect && participant.user) {
+          const userId = participant.user._id.toString();
+          
+          // Apply time filter
+          if (timeRange !== "all" && participant.submittedAt) {
+            const submittedDate = new Date(participant.submittedAt);
+            const timeDiff = now - submittedDate;
+            
+            switch (timeRange) {
+              case "24h":
+                if (timeDiff > 24 * 60 * 60 * 1000) return;
+                break;
+              case "7d":
+                if (timeDiff > 7 * 24 * 60 * 60 * 1000) return;
+                break;
+              case "30d":
+                if (timeDiff > 30 * 24 * 60 * 60 * 1000) return;
+                break;
+            }
+          }
+
+          if (!studentStats[userId]) {
+            studentStats[userId] = {
+              user: participant.user,
+              totalPoints: 0,
+              ctfsSolved: 0,
+              categories: {},
+              submissions: [],
+              avgPoints: 0,
+              lastActivity: participant.submittedAt
+            };
+          }
+
+          studentStats[userId].totalPoints += participant.pointsEarned || ctf.points;
+          studentStats[userId].ctfsSolved += 1;
+          studentStats[userId].submissions.push({
+            ctfId: ctf._id,
+            ctfTitle: ctf.title,
+            category: ctf.category,
+            points: participant.pointsEarned || ctf.points,
+            submittedAt: participant.submittedAt
+          });
+
+          // Track category performance
+          if (!studentStats[userId].categories[ctf.category]) {
+            studentStats[userId].categories[ctf.category] = {
+              count: 0,
+              totalPoints: 0
+            };
+          }
+          studentStats[userId].categories[ctf.category].count += 1;
+          studentStats[userId].categories[ctf.category].totalPoints += participant.pointsEarned || ctf.points;
+        }
+      });
+    });
+
+    // Convert to array and calculate averages
+    const leaderboard = Object.values(studentStats)
+      .map(student => {
+        student.avgPoints = student.ctfsSolved > 0 ? student.totalPoints / student.ctfsSolved : 0;
+        return student;
+      })
+      .sort((a, b) => b.totalPoints - a.totalPoints)
+      .slice(0, parseInt(limit));
+
+    // Add ranks
+    leaderboard.forEach((student, index) => {
+      student.rank = index + 1;
+    });
+
+    res.json({
+      message: "Leaderboard retrieved successfully",
+      leaderboard,
+      filters: {
+        timeRange,
+        category,
+        limit: parseInt(limit)
+      },
+      totalStudents: leaderboard.length
+    });
+  } catch (error) {
+    console.error("Get leaderboard error:", error);
+    res.status(500).json({ error: "Failed to fetch leaderboard" });
+  }
+});
+
+// Get detailed student analytics
+router.get("/students/:userId/analytics", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get user details
+    const user = await User.findById(userId).select("fullName email expertiseLevel specialization sem contactNumber createdAt lastLogin");
+    if (!user) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Get all submissions for the user
+    const submissions = await Submission.find({ 
+      user: userId,
+      submissionStatus: "approved"
+    })
+      .populate("ctf", "title category points difficulty")
+      .sort({ submittedAt: -1 });
+
+    // Get all CTFs the user has participated in
+    const ctfs = await CTF.find({
+      "participants.user": userId
+    })
+      .populate("participants.user", "fullName email")
+      .select("title category points difficulty participants status");
+
+    // Calculate statistics
+    const totalSubmissions = submissions.length;
+    const totalPoints = submissions.reduce((sum, sub) => sum + (sub.points || 0), 0);
+    const avgPoints = totalSubmissions > 0 ? totalPoints / totalSubmissions : 0;
+
+    // Category-wise performance
+    const categoryPerformance = {};
+    submissions.forEach(sub => {
+      const category = sub.ctf.category;
+      if (!categoryPerformance[category]) {
+        categoryPerformance[category] = {
+          count: 0,
+          totalPoints: 0,
+          avgPoints: 0
+        };
+      }
+      categoryPerformance[category].count += 1;
+      categoryPerformance[category].totalPoints += sub.points || 0;
+    });
+
+    // Calculate averages
+    Object.keys(categoryPerformance).forEach(category => {
+      categoryPerformance[category].avgPoints = 
+        categoryPerformance[category].totalPoints / categoryPerformance[category].count;
+    });
+
+    // Difficulty performance
+    const difficultyPerformance = {
+      Easy: { count: 0, totalPoints: 0 },
+      Medium: { count: 0, totalPoints: 0 },
+      Hard: { count: 0, totalPoints: 0 }
+    };
+
+    submissions.forEach(sub => {
+      const difficulty = sub.ctf.difficulty;
+      if (difficultyPerformance[difficulty]) {
+        difficultyPerformance[difficulty].count += 1;
+        difficultyPerformance[difficulty].totalPoints += sub.points || 0;
+      }
+    });
+
+    // Recent activity (last 10 submissions)
+    const recentActivity = submissions.slice(0, 10);
+
+    // CTF completion status
+    const ctfStatus = {
+      total: ctfs.length,
+      solved: ctfs.filter(ctf => 
+        ctf.participants.some(p => 
+          p.user._id.toString() === userId && p.isCorrect
+        )
+      ).length,
+      attempted: ctfs.filter(ctf => 
+        ctf.participants.some(p => 
+          p.user._id.toString() === userId && !p.isCorrect
+        )
+      ).length
+    };
+
+    const analytics = {
+      user,
+      overview: {
+        totalSubmissions,
+        totalPoints,
+        avgPoints: Math.round(avgPoints * 100) / 100,
+        ctfStatus,
+        successRate: ctfStatus.total > 0 ? 
+          Math.round((ctfStatus.solved / ctfStatus.total) * 100) : 0
+      },
+      categoryPerformance,
+      difficultyPerformance,
+      recentActivity,
+      allSubmissions: submissions
+    };
+
+    res.json({
+      message: "Student analytics retrieved successfully",
+      analytics
+    });
+  } catch (error) {
+    console.error("Get student analytics error:", error);
+    res.status(500).json({ error: "Failed to fetch student analytics" });
+  }
+});
+
+// Export leaderboard data
+router.get("/export/leaderboard", requireAdmin, async (req, res) => {
+  try {
+    const { timeRange = "all", category = "all" } = req.query;
+
+    const response = await fetch(`${process.env.BACKEND_URL}/admin/leaderboard?timeRange=${timeRange}&category=${category}&limit=1000`);
+    const data = await response.json();
+
+    if (!data.leaderboard) {
+      return res.status(404).json({ error: "No leaderboard data found" });
+    }
+
+    const fields = [
+      "rank",
+      "fullName",
+      "email",
+      "expertiseLevel",
+      "specialization",
+      "sem",
+      "totalPoints",
+      "ctfsSolved",
+      "avgPoints",
+      "lastActivity"
+    ];
+
+    const formattedData = data.leaderboard.map(student => ({
+      rank: student.rank,
+      fullName: student.user.fullName,
+      email: student.user.email,
+      expertiseLevel: student.user.expertiseLevel,
+      specialization: student.user.specialization || "N/A",
+      sem: student.user.sem || "N/A",
+      totalPoints: student.totalPoints,
+      ctfsSolved: student.ctfsSolved,
+      avgPoints: Math.round(student.avgPoints * 100) / 100,
+      lastActivity: student.lastActivity ? new Date(student.lastActivity).toLocaleString() : "N/A"
+    }));
+
+    const parser = new Parser({ fields });
+    const csv = parser.parse(formattedData);
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=leaderboard-${timeRange}-${category}-${new Date().toISOString().split("T")[0]}.csv`
+    );
+    res.send(csv);
+  } catch (error) {
+    console.error("Export leaderboard error:", error);
+    res.status(500).json({ error: "Failed to export leaderboard" });
+  }
+});
+
 
 module.exports = { router, requireAdmin };
