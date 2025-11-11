@@ -2431,7 +2431,7 @@ router.get("/export/users", requireAdmin, async (req, res) => {
       "fullName",
       "email",
       "contactNumber",
-      "Sem",
+      "sem",
       "expertiseLevel",
       "role",
       "isActive",
