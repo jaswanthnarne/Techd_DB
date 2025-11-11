@@ -2423,7 +2423,7 @@ router.get("/export/users", requireAdmin, async (req, res) => {
   try {
     const users = await User.find({})
       .select(
-        "fullName email contactNumber Sem expertiseLevel role isActive createdAt lastLogin"
+        "fullName email contactNumber sem expertiseLevel role isActive createdAt lastLogin"
       )
       .sort({ createdAt: -1 });
 
@@ -2431,7 +2431,7 @@ router.get("/export/users", requireAdmin, async (req, res) => {
       "fullName",
       "email",
       "contactNumber",
-      "sem",
+      "Sem",
       "expertiseLevel",
       "role",
       "isActive",
