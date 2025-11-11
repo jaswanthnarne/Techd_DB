@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const sendMail = require('../utils/sendMail');
+const {verifyRecaptcha} = require("../utils/recaptcha");
 
 const router = express.Router();
 
@@ -66,6 +67,7 @@ router.get('/health', (req, res) => {
 
 // User registration - Fixed version with specific validation errors
 router.post('/register', [
+  body('recaptchaToken').notEmpty().withMessage('reCAPTCHA token is required'),
   body('email')
     .isEmail().withMessage('Please provide a valid email address')
     .normalizeEmail(),
@@ -108,6 +110,13 @@ router.post('/register', [
 
 ], async (req, res) => {
   try {
+    // Verify reCAPTCHA token
+    const { recaptchaToken } = req.body;
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken);
+    if (!recaptchaResult.success || recaptchaResult.score < 0.5) {
+      return res.status(400).json({ error: "reCAPTCHA verification failed" });
+    }
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       // Format errors to be more specific and user-friendly
@@ -371,10 +380,18 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // User login
 router.post('/login', [
+  body('recaptchaToken').notEmpty().withMessage('reCAPTCHA token is required'),
   body('email').isEmail().withMessage('Please provide a valid email'),
   body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
   try {
+    // Verify reCAPTCHA token
+    const { recaptchaToken } = req.body;
+    const recaptchaResult = await verifyRecaptcha(recaptchaToken);
+    if (!recaptchaResult.success || recaptchaResult.score < 0.5) {
+      return res.status(400).json({ error: "reCAPTCHA verification failed" });
+    }
+    
     console.log('🔐 Login attempt for:', req.body.email);
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

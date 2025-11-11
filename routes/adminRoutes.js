@@ -9,6 +9,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { Parser } = require("@json2csv/plainjs");
 const sendMail = require("../utils/sendMail");
+const {verifyRecaptcha} = require("../utils/recaptcha");
 
 const router = express.Router();
 
@@ -233,11 +234,19 @@ router.post("/register-first-admin", async (req, res) => {
 router.post(
   "/login",
   [
+    body("recaptchaToken").notEmpty().withMessage("reCAPTCHA token is required"),
     body("email").isEmail().withMessage("Please provide a valid email"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   async (req, res) => {
     try {
+      // Verify reCAPTCHA token
+      const { recaptchaToken } = req.body;
+      const recaptchaResult = await verifyRecaptcha(recaptchaToken);
+      if (!recaptchaResult.success || recaptchaResult.score < 0.5) {
+        return res.status(400).json({ error: "reCAPTCHA verification failed" });
+      }
+      
       const errors = validationResult(req);
       console.log("login admin", req.body);
       if (!errors.isEmpty())
