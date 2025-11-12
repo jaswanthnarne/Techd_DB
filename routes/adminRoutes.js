@@ -4160,6 +4160,7 @@ router.get("/students/:userId/analytics", requireAdmin, async (req, res) => {
 });
 
 // Export leaderboard data - FIXED to follow same pattern
+// Export leaderboard data - COMPLETE WORKING VERSION
 router.get("/export/leaderboard", requireAdmin, async (req, res) => {
   try {
     const { timeRange = "all", category = "all" } = req.query;
@@ -4175,23 +4176,23 @@ router.get("/export/leaderboard", requireAdmin, async (req, res) => {
       "rank",
       "fullName",
       "email",
-      "specialization", 
+      "specialization",
       "sem",
       "totalPoints",
-      "ctfsSolved",
+      "ctfsSolved", 
       "avgPoints",
       "lastActivity"
     ];
 
-    const formattedData = leaderboardData.map(student => ({
-      rank: student.rank,
-      fullName: student.user.fullName,
-      email: student.user.email,
-      specialization: student.user.specialization || "N/A",
-      sem: student.user.sem || "N/A",
-      totalPoints: student.totalPoints,
-      ctfsSolved: student.ctfsSolved,
-      avgPoints: Math.round(student.avgPoints * 100) / 100,
+    const formattedData = leaderboardData.map((student, index) => ({
+      rank: index + 1,
+      fullName: student.fullName,
+      email: student.email,
+      specialization: student.specialization || "N/A",
+      sem: student.sem || "N/A",
+      totalPoints: student.totalPoints || 0,
+      ctfsSolved: student.ctfsSolved || 0,
+      avgPoints: Math.round((student.avgPoints || 0) * 100) / 100,
       lastActivity: student.lastActivity ? new Date(student.lastActivity).toLocaleString() : "N/A"
     }));
 
@@ -4210,12 +4211,13 @@ router.get("/export/leaderboard", requireAdmin, async (req, res) => {
   }
 });
 
-// In services/leaderboardService.js or similar
-const calculateLeaderboardData = async ({ timeRange, category, limit = 500 }) => {
+// Complete leaderboard calculation function
+const calculateLeaderboardData = async ({ timeRange, category, limit = 1000 }) => {
   try {
-    // Build query based on filters (similar to your existing leaderboard route)
-    let dateFilter = {};
+    // Build match filters for submissions
+    let matchFilter = { status: "correct" }; // Only count correct submissions
     
+    // Time range filter
     if (timeRange !== 'all') {
       const now = new Date();
       const startDate = new Date();
@@ -4230,19 +4232,70 @@ const calculateLeaderboardData = async ({ timeRange, category, limit = 500 }) =>
         case '30d':
           startDate.setDate(now.getDate() - 30);
           break;
+        default:
+          break;
       }
-      dateFilter = { submittedAt: { $gte: startDate } };
+      matchFilter.submittedAt = { $gte: startDate };
     }
 
-    // Your existing leaderboard calculation logic here
-    // This should be the same aggregation/query as your main leaderboard route
+    // Category filter
+    if (category !== 'all') {
+      matchFilter.category = category;
+    }
+
+    // Aggregation pipeline to calculate leaderboard
     const leaderboard = await Submission.aggregate([
-      // Your existing aggregation pipeline
-      // This should match what's in your /admin/leaderboard route
+      // Match submissions based on filters
+      { $match: matchFilter },
+      
+      // Group by user and calculate metrics
+      {
+        $group: {
+          _id: "$user",
+          totalPoints: { $sum: "$points" },
+          ctfsSolved: { $sum: 1 },
+          avgPoints: { $avg: "$points" },
+          lastActivity: { $max: "$submittedAt" }
+        }
+      },
+      
+      // Lookup user details
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "userDetails"
+        }
+      },
+      
+      // Unwind user details
+      { $unwind: "$userDetails" },
+      
+      // Project the final fields
+      {
+        $project: {
+          fullName: "$userDetails.fullName",
+          email: "$userDetails.email",
+          specialization: "$userDetails.specialization",
+          sem: "$userDetails.sem",
+          totalPoints: 1,
+          ctfsSolved: 1,
+          avgPoints: 1,
+          lastActivity: 1
+        }
+      },
+      
+      // Sort by total points (descending)
+      { $sort: { totalPoints: -1 } },
+      
+      // Limit results
+      { $limit: limit }
     ]);
 
     return leaderboard;
   } catch (error) {
+    console.error("Leaderboard calculation error:", error);
     throw new Error(`Failed to calculate leaderboard: ${error.message}`);
   }
 };
