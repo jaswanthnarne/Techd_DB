@@ -4161,69 +4161,86 @@ router.get("/students/:userId/analytics", requireAdmin, async (req, res) => {
 
 
 // SIMPLER VERSION - Using your existing models
+// Export leaderboard data - USING YOUR EXACT SCHEMA
 router.get("/export/leaderboard", requireAdmin, async (req, res) => {
   try {
     const { timeRange = "all", category = "all" } = req.query;
 
-    // Get all users with their basic info
-    const users = await User.find({})
-      .select("fullName email specialization sem expertiseLevel createdAt lastLogin")
-      .sort({ createdAt: -1 });
+    // Build match filter based on your schema
+    let matchFilter = { isCorrect: true }; // Use isCorrect instead of status
 
-    // For each user, get their submission stats
-    const leaderboardData = await Promise.all(
-      users.map(async (user) => {
-        // Build submission filter
-        let submissionFilter = { user: user._id, status: "correct" };
-        
-        // Add time filter if needed
-        if (timeRange !== 'all') {
-          const now = new Date();
-          const startDate = new Date();
-          
-          switch (timeRange) {
-            case '24h':
-              startDate.setHours(now.getHours() - 24);
-              break;
-            case '7d':
-              startDate.setDate(now.getDate() - 7);
-              break;
-            case '30d':
-              startDate.setDate(now.getDate() - 30);
-              break;
-          }
-          submissionFilter.submittedAt = { $gte: startDate };
+    // Add time filter if needed
+    if (timeRange !== 'all') {
+      const now = new Date();
+      const startDate = new Date();
+      
+      switch (timeRange) {
+        case '24h':
+          startDate.setHours(now.getHours() - 24);
+          break;
+        case '7d':
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case '30d':
+          startDate.setDate(now.getDate() - 30);
+          break;
+      }
+      matchFilter.submittedAt = { $gte: startDate };
+    }
+
+    // Add category filter if needed (if category exists in submissions)
+    if (category !== 'all') {
+      // Note: You might need to populate CTF to get category, or store category in submission
+      // For now, we'll skip category filter if it's not in submission schema
+      console.log('Category filter not implemented in submissions');
+    }
+
+    // Use aggregation pipeline exactly like your global leaderboard
+    const leaderboard = await Submission.aggregate([
+      {
+        $match: matchFilter
+      },
+      {
+        $group: {
+          _id: "$user",
+          totalPoints: { $sum: "$points" },
+          solveCount: { $sum: 1 },
+          lastSolve: { $max: "$submittedAt" },
         }
-        
-        // Add category filter if needed
-        if (category !== 'all') {
-          submissionFilter.category = category;
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "user",
         }
+      },
+      {
+        $unwind: "$user"
+      },
+      {
+        $project: {
+          "user.password": 0,
+          "user.loginHistory": 0,
+          "user.passwordResetToken": 0,
+          "user.passwordResetExpires": 0,
+        }
+      },
+      {
+        $sort: {
+          totalPoints: -1,
+          lastSolve: 1,
+        }
+      },
+      {
+        $limit: 1000
+      }
+    ]);
 
-        // Get user's submission stats
-        const userSubmissions = await Submission.find(submissionFilter);
-        const totalPoints = userSubmissions.reduce((sum, sub) => sum + (sub.points || 0), 0);
-        const ctfsSolved = userSubmissions.length;
-        const avgPoints = ctfsSolved > 0 ? totalPoints / ctfsSolved : 0;
-        const lastActivity = userSubmissions.length > 0 
-          ? userSubmissions[userSubmissions.length - 1].submittedAt 
-          : null;
-
-        return {
-          fullName: user.fullName,
-          email: user.email,
-          specialization: user.specialization || "N/A",
-          sem: user.sem || "N/A",
-          totalPoints,
-          ctfsSolved,
-          avgPoints,
-          lastActivity: lastActivity || user.lastLogin
-        };
-      })
-    );
-
-    // Sort by total points (descending)
-    leaderboardData.sort((a, b) => b.totalPoints - a.totalPoints);
+    if (!leaderboard || leaderboard.length === 0) {
+      return res.status(404).json({ error: "No leaderboard data found" });
+    }
 
     const fields = [
       "rank",
@@ -4231,17 +4248,24 @@ router.get("/export/leaderboard", requireAdmin, async (req, res) => {
       "email",
       "specialization",
       "sem",
+      "expertiseLevel",
       "totalPoints",
       "ctfsSolved",
       "avgPoints",
       "lastActivity"
     ];
 
-    const formattedData = leaderboardData.map((student, index) => ({
+    const formattedData = leaderboard.map((student, index) => ({
       rank: index + 1,
-      ...student,
-      avgPoints: Math.round(student.avgPoints * 100) / 100,
-      lastActivity: student.lastActivity ? new Date(student.lastActivity).toLocaleString() : "N/A"
+      fullName: student.user.fullName,
+      email: student.user.email,
+      specialization: student.user.specialization || "N/A",
+      sem: student.user.sem || "N/A",
+      expertiseLevel: student.user.expertiseLevel,
+      totalPoints: student.totalPoints,
+      ctfsSolved: student.solveCount, // Using solveCount from aggregation
+      avgPoints: student.solveCount > 0 ? Math.round((student.totalPoints / student.solveCount) * 100) / 100 : 0,
+      lastActivity: student.lastSolve ? new Date(student.lastSolve).toLocaleString() : "N/A"
     }));
 
     const parser = new Parser({ fields });
