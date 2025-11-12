@@ -4159,40 +4159,88 @@ router.get("/students/:userId/analytics", requireAdmin, async (req, res) => {
   }
 });
 
-// Export leaderboard data - FIXED to follow same pattern
-// Export leaderboard data - COMPLETE WORKING VERSION
+
+// SIMPLER VERSION - Using your existing models
 router.get("/export/leaderboard", requireAdmin, async (req, res) => {
   try {
     const { timeRange = "all", category = "all" } = req.query;
 
-    // Use direct database query like your other export functions
-    const leaderboardData = await calculateLeaderboardData({ timeRange, category, limit: 1000 });
+    // Get all users with their basic info
+    const users = await User.find({})
+      .select("fullName email specialization sem expertiseLevel createdAt lastLogin")
+      .sort({ createdAt: -1 });
 
-    if (!leaderboardData || leaderboardData.length === 0) {
-      return res.status(404).json({ error: "No leaderboard data found" });
-    }
+    // For each user, get their submission stats
+    const leaderboardData = await Promise.all(
+      users.map(async (user) => {
+        // Build submission filter
+        let submissionFilter = { user: user._id, status: "correct" };
+        
+        // Add time filter if needed
+        if (timeRange !== 'all') {
+          const now = new Date();
+          const startDate = new Date();
+          
+          switch (timeRange) {
+            case '24h':
+              startDate.setHours(now.getHours() - 24);
+              break;
+            case '7d':
+              startDate.setDate(now.getDate() - 7);
+              break;
+            case '30d':
+              startDate.setDate(now.getDate() - 30);
+              break;
+          }
+          submissionFilter.submittedAt = { $gte: startDate };
+        }
+        
+        // Add category filter if needed
+        if (category !== 'all') {
+          submissionFilter.category = category;
+        }
+
+        // Get user's submission stats
+        const userSubmissions = await Submission.find(submissionFilter);
+        const totalPoints = userSubmissions.reduce((sum, sub) => sum + (sub.points || 0), 0);
+        const ctfsSolved = userSubmissions.length;
+        const avgPoints = ctfsSolved > 0 ? totalPoints / ctfsSolved : 0;
+        const lastActivity = userSubmissions.length > 0 
+          ? userSubmissions[userSubmissions.length - 1].submittedAt 
+          : null;
+
+        return {
+          fullName: user.fullName,
+          email: user.email,
+          specialization: user.specialization || "N/A",
+          sem: user.sem || "N/A",
+          totalPoints,
+          ctfsSolved,
+          avgPoints,
+          lastActivity: lastActivity || user.lastLogin
+        };
+      })
+    );
+
+    // Sort by total points (descending)
+    leaderboardData.sort((a, b) => b.totalPoints - a.totalPoints);
 
     const fields = [
       "rank",
-      "fullName",
+      "fullName", 
       "email",
       "specialization",
       "sem",
       "totalPoints",
-      "ctfsSolved", 
+      "ctfsSolved",
       "avgPoints",
       "lastActivity"
     ];
 
     const formattedData = leaderboardData.map((student, index) => ({
       rank: index + 1,
-      fullName: student.fullName,
-      email: student.email,
-      specialization: student.specialization || "N/A",
-      sem: student.sem || "N/A",
-      totalPoints: student.totalPoints || 0,
-      ctfsSolved: student.ctfsSolved || 0,
-      avgPoints: Math.round((student.avgPoints || 0) * 100) / 100,
+      ...student,
+      avgPoints: Math.round(student.avgPoints * 100) / 100,
       lastActivity: student.lastActivity ? new Date(student.lastActivity).toLocaleString() : "N/A"
     }));
 
@@ -4210,94 +4258,5 @@ router.get("/export/leaderboard", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "Failed to export leaderboard" });
   }
 });
-
-// Complete leaderboard calculation function
-const calculateLeaderboardData = async ({ timeRange, category, limit = 1000 }) => {
-  try {
-    // Build match filters for submissions
-    let matchFilter = { status: "correct" }; // Only count correct submissions
-    
-    // Time range filter
-    if (timeRange !== 'all') {
-      const now = new Date();
-      const startDate = new Date();
-      
-      switch (timeRange) {
-        case '24h':
-          startDate.setHours(now.getHours() - 24);
-          break;
-        case '7d':
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case '30d':
-          startDate.setDate(now.getDate() - 30);
-          break;
-        default:
-          break;
-      }
-      matchFilter.submittedAt = { $gte: startDate };
-    }
-
-    // Category filter
-    if (category !== 'all') {
-      matchFilter.category = category;
-    }
-
-    // Aggregation pipeline to calculate leaderboard
-    const leaderboard = await Submission.aggregate([
-      // Match submissions based on filters
-      { $match: matchFilter },
-      
-      // Group by user and calculate metrics
-      {
-        $group: {
-          _id: "$user",
-          totalPoints: { $sum: "$points" },
-          ctfsSolved: { $sum: 1 },
-          avgPoints: { $avg: "$points" },
-          lastActivity: { $max: "$submittedAt" }
-        }
-      },
-      
-      // Lookup user details
-      {
-        $lookup: {
-          from: "users",
-          localField: "_id",
-          foreignField: "_id",
-          as: "userDetails"
-        }
-      },
-      
-      // Unwind user details
-      { $unwind: "$userDetails" },
-      
-      // Project the final fields
-      {
-        $project: {
-          fullName: "$userDetails.fullName",
-          email: "$userDetails.email",
-          specialization: "$userDetails.specialization",
-          sem: "$userDetails.sem",
-          totalPoints: 1,
-          ctfsSolved: 1,
-          avgPoints: 1,
-          lastActivity: 1
-        }
-      },
-      
-      // Sort by total points (descending)
-      { $sort: { totalPoints: -1 } },
-      
-      // Limit results
-      { $limit: limit }
-    ]);
-
-    return leaderboard;
-  } catch (error) {
-    console.error("Leaderboard calculation error:", error);
-    throw new Error(`Failed to calculate leaderboard: ${error.message}`);
-  }
-};
 
 module.exports = { router, requireAdmin };
