@@ -757,7 +757,7 @@ router.put(
   }
 );
 
-// Publish CTF
+// Publish CTF with email notification to ALL students
 router.post("/ctfs/:id/publish", requireAdmin, async (req, res) => {
   try {
     const ctf = await CTF.findById(req.params.id);
@@ -766,12 +766,31 @@ router.post("/ctfs/:id/publish", requireAdmin, async (req, res) => {
       return res.status(404).json({ error: "CTF not found" });
     }
 
+    // Get ALL active students (remove the email filter)
+    const students = await User.find({
+      role: "student", 
+      isActive: true,
+    }).select("email fullName");
+
+    // Update CTF status
     ctf.isVisible = true;
     ctf.isPublished = true;
     await ctf.save();
 
+    // Send email notifications to ALL students
+    let emailResults = { sent: 0, failed: 0, total: students.length };
+
+    if (students.length > 0) {
+      emailResults = await sendCTFPublishedEmails(students, ctf);
+    }
+
     res.json({
-      message: "CTF published successfully",
+      message: `CTF published successfully. Email notifications sent to ${emailResults.sent} out of ${emailResults.total} students.`,
+      emailResults: {
+        sent: emailResults.sent,
+        failed: emailResults.failed,
+        total: emailResults.total,
+      },
       ctf: {
         _id: ctf._id,
         title: ctf.title,
@@ -784,6 +803,140 @@ router.post("/ctfs/:id/publish", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+// Enhanced helper function to send CTF published emails
+async function sendCTFPublishedEmails(students, ctf) {
+  const results = { sent: 0, failed: 0, errors: [] };
+
+  // Process emails in batches to avoid overwhelming the server
+  const BATCH_SIZE = 5; // Send 5 emails at a time
+
+  for (let i = 0; i < students.length; i += BATCH_SIZE) {
+    const batch = students.slice(i, i + BATCH_SIZE);
+
+    const batchPromises = batch.map(async (student) => {
+      try {
+        const emailSubject = `🎯 New CTF Challenge Published: ${ctf.title}`;
+
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                  .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                  .ctf-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
+                  .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                  .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>🎯 New CTF Challenge!</h1>
+                      <p>Get ready to test your skills</p>
+                  </div>
+                  <div class="content">
+                      <h2>Hello ${student.fullName},</h2>
+                      <p>A new CTF challenge has just been published and is now available for you to solve!</p>
+                      
+                      <div class="ctf-details">
+                          <h3>${ctf.title}</h3>
+                          <p><strong>Category:</strong> ${ctf.category}</p>
+                          <p><strong>Difficulty:</strong> ${ctf.difficulty}</p>
+                          <p><strong>Points:</strong> ${ctf.points}</p>
+                          <p><strong>Description:</strong> ${
+                            ctf.description
+                          }</p>
+                          ${
+                            ctf.schedule
+                              ? `<p><strong>Available Until:</strong> ${new Date(
+                                  ctf.schedule.endDate
+                                ).toLocaleDateString()}</p>`
+                              : ""
+                          }
+                      </div>
+
+                      <p>Don't miss this opportunity to earn points and improve your ranking!</p>
+                      
+                      <a href="${
+                        process.env.FRONTEND_URL || "http://localhost:3000"
+                      }/ctfs/${ctf._id}" class="button">
+                          Start Challenge Now
+                      </a>
+                      
+                      <p>Good luck and happy hacking! 🚀</p>
+                  </div>
+                  <div class="footer">
+                      <p>This is an automated notification. Please do not reply to this email.</p>
+                      <p>© ${new Date().getFullYear()} CTF Platform. All rights reserved.</p>
+                  </div>
+              </div>
+          </body>
+          </html>
+        `;
+
+        const emailText = `
+          New CTF Challenge Published: ${ctf.title}
+          
+          Hello ${student.fullName},
+          
+          A new CTF challenge has just been published and is now available for you to solve!
+          
+          Challenge: ${ctf.title}
+          Category: ${ctf.category}
+          Difficulty: ${ctf.difficulty}
+          Points: ${ctf.points}
+          Description: ${ctf.description}
+          ${
+            ctf.schedule
+              ? `Available Until: ${new Date(
+                  ctf.schedule.endDate
+                ).toLocaleDateString()}`
+              : ""
+          }
+          
+          Start the challenge here: ${
+            process.env.FRONTEND_URL || "http://localhost:3000"
+          }/ctfs/${ctf._id}
+          
+          Good luck and happy hacking!
+        `;
+
+        await sendMail({
+          email: student.email,
+          subject: emailSubject,
+          message: emailHtml,
+          text: emailText,
+        });
+        return { success: true, email: student.email };
+      } catch (error) {
+        console.error(
+          `❌ Failed to send email to ${student.email}:`,
+          error.message
+        );
+        results.failed++;
+        results.errors.push({ email: student.email, error: error.message });
+        return { success: false, email: student.email, error: error.message };
+      }
+    });
+
+    // Wait for current batch to complete before starting next batch
+    const batchResults = await Promise.allSettled(batchPromises);
+
+    // Small delay between batches to avoid rate limiting
+    if (i + BATCH_SIZE < students.length) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  console.log(
+    `📧 CTF publication email process completed: ${results.sent} sent, ${results.failed} failed out of ${students.length} students`
+  );
+  return results;
+}
 
 // Unpublish CTF
 router.post("/ctfs/:id/unpublish", requireAdmin, async (req, res) => {
@@ -4159,8 +4312,6 @@ router.get("/students/:userId/analytics", requireAdmin, async (req, res) => {
   }
 });
 
-
-// SIMPLER VERSION - Using your existing models
 // Export leaderboard data - USING YOUR EXACT SCHEMA
 router.get("/export/leaderboard", requireAdmin, async (req, res) => {
   try {
